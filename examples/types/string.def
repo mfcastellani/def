@@ -1,0 +1,35 @@
+// String guide
+// Strings do not use the + operator. Use concat(...) to join string values.
+// This example also shows default values, functions, if, match, print, and assertions.
+
+def empty as string
+def first as string("Mar")
+def second as string("celo")
+def name as string(concat(first, second))
+
+def greet as function(value as string) (
+  concat("Hello, ", value)
+)
+
+def label as string(
+  match name (
+    "Marcelo" => "known",
+    _ => "unknown"
+  )
+)
+
+if name == "Marcelo" (
+  print("string if branch")
+) else (
+  print("string else branch")
+)
+
+print(empty)
+print(name)
+print(greet(name))
+print(label)
+
+assert(empty == "")
+assert(name == "Marcelo")
+assert(greet(name) == "Hello, Marcelo")
+assert(label == "known")

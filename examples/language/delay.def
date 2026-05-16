@@ -1,0 +1,10 @@
+def wait_ms as integer(500)
+def ok as boolean(false)
+
+print("Start delay")
+delay(wait_ms)
+print("End delay")
+
+ok = true
+
+assert(ok == true)

@@ -1,0 +1,129 @@
+def jsonplaceholder as imported("jsonplaceholder")
+
+// ── verdict functions ─────────────────────────────────────────────────────────
+// Each takes the HTTP status code as an integer and returns a semantic label.
+
+def create_verdict as function(code as integer) (
+  match code (
+    201 => "resource created as expected",
+    _   => "unexpected status — workflow may be inconsistent"
+  )
+)
+
+def get_verdict as function(code as integer) (
+  match code (
+    200 => "post found and verified",
+    404 => "post not found",
+    _   => "unexpected status"
+  )
+)
+
+def list_verdict as function(code as integer) (
+  match code (
+    200 => "posts listed successfully",
+    _   => "unexpected status"
+  )
+)
+
+def delete_verdict as function(code as integer) (
+  match code (
+    200 => "resource removed successfully",
+    404 => "resource not found",
+    _   => "unexpected status"
+  )
+)
+
+// ── setup ─────────────────────────────────────────────────────────────────────
+
+def post_id    as string("1")
+def user_id    as string("1")
+def now        as datetime
+def started_at as string(now.format("hh:mm:ss dd/mm/yyyy"))
+
+print("=== JSONPlaceholder workflow ===")
+print("started:  {{started_at}}")
+print("base url: {{jsonplaceholder.base_url}}")
+
+// ── create (POST /posts) ──────────────────────────────────────────────────────
+
+def create_res as response(jsonplaceholder.create_post())
+
+print("")
+print("─── CREATE POST ─────────────────────────────────────────────────────────")
+print("status:   {{create_res.describe_status()}}")
+print("ok:       {{create_res.ok()}}")
+print("duration: {{create_res.duration()}}ms")
+print("size:     {{create_res.size()}} bytes")
+print("body:     {{create_res.body()}}")
+
+assert(create_res.status() == 201)
+assert(create_res.ok())
+assert(create_res.body_contains(jsonplaceholder.title))
+
+print("verdict:  {{create_verdict(create_res.status())}}")
+
+// ── read (GET /posts/:id) ─────────────────────────────────────────────────────
+
+def get_res as response(jsonplaceholder.get_post(post_id))
+
+print("")
+print("─── GET POST /posts/{{post_id}} ─────────────────────────────────────────")
+print("status:       {{get_res.describe_status()}}")
+print("ok:           {{get_res.ok()}}")
+print("duration:     {{get_res.duration()}}ms")
+print("size:         {{get_res.size()}} bytes")
+print("content-type: {{get_res.content_type()}}")
+print("body:         {{get_res.body()}}")
+
+if get_res.ok() (
+  assert(get_res.body_contains("userId"))
+  print("verdict:      {{get_verdict(get_res.status())}}")
+) else (
+  print("verdict:      {{get_verdict(get_res.status())}}")
+)
+
+// ── list by user (GET /posts?userId=:id) ─────────────────────────────────────
+
+def list_res as response(jsonplaceholder.list_posts(user_id))
+
+def posts_key as string("userId")
+print("")
+print("─── LIST POSTS (userId={{user_id}}) ─────────────────────────────────────")
+print("status:          {{list_res.describe_status()}}")
+print("ok:              {{list_res.ok()}}")
+print("duration:        {{list_res.duration()}}ms")
+print("size:            {{list_res.size()}} bytes")
+print("contains userId: {{list_res.body_contains(posts_key)}}")
+
+assert(list_res.ok())
+assert(list_res.body_contains(posts_key))
+
+print("verdict:         {{list_verdict(list_res.status())}}")
+
+// ── delete (DELETE /posts/:id) ────────────────────────────────────────────────
+
+def delete_res as response(jsonplaceholder.delete_post(post_id))
+
+print("")
+print("─── DELETE POST /posts/{{post_id}} ──────────────────────────────────────")
+print("status:   {{delete_res.describe_status()}}")
+print("ok:       {{delete_res.ok()}}")
+print("duration: {{delete_res.duration()}}ms")
+
+assert(delete_res.ok())
+
+print("verdict:  {{delete_verdict(delete_res.status())}}")
+
+// ── summary ───────────────────────────────────────────────────────────────────
+
+def now        as datetime
+def finished_at as string(now.format("hh:mm:ss dd/mm/yyyy"))
+
+print("")
+print("=== SUMMARY ═════════════════════════════════════════════════════════════")
+print("started:   {{started_at}}")
+print("finished:  {{finished_at}}")
+print("create:    {{create_res.ok()}} — {{create_res.describe_status()}} in {{create_res.duration()}}ms")
+print("get:       {{get_res.ok()}} — {{get_res.describe_status()}} in {{get_res.duration()}}ms")
+print("list:      {{list_res.ok()}} — {{list_res.describe_status()}} in {{list_res.duration()}}ms")
+print("delete:    {{delete_res.ok()}} — {{delete_res.describe_status()}} in {{delete_res.duration()}}ms")

@@ -1,0 +1,42 @@
+// JSONPlaceholder API module
+// Functions return the raw response so the caller can inspect and assert.
+
+def base_url as string("https://jsonplaceholder.typicode.com")
+def title    as string("Def Language Post")
+
+def create_post as function() (
+  def now        as datetime
+  def started_at as string(now.format("hh:mm:ss dd/mm/yyyy"))
+  def user_id    as string("1")
+
+  request(POST)
+    .path(concat(base_url, "/posts"))
+    .body_from("jdef/post.jdef")
+    .type(JSON)
+    .with_var(title)
+    .with_var(user_id)
+    .with_var(started_at)
+    .do()
+)
+
+def get_post as function(id as string) (
+  request(GET)
+    .path(concat(base_url, "/posts/", id))
+    .headers_from("hdef/common.hdef")
+    .do()
+)
+
+def list_posts as function(user_id as string) (
+  request(GET)
+    .path(concat(base_url, "/posts"))
+    .query_string(tuple("userId", user_id))
+    .headers_from("hdef/common.hdef")
+    .do()
+)
+
+def delete_post as function(id as string) (
+  request(DELETE)
+    .path(concat(base_url, "/posts/", id))
+    .headers_from("hdef/common.hdef")
+    .do()
+)

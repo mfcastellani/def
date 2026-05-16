@@ -1,0 +1,3 @@
+// common request headers for JSONPlaceholder
+Accept: application/json
+X-Client: def-language

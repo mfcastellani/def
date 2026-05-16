@@ -1,0 +1,4 @@
+// query string values for request
+search: {{search_term}}
+page: 1
+token: abc:123

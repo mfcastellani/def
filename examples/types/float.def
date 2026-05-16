@@ -1,0 +1,42 @@
+// Float guide
+// This example shows float initialization, default values, numeric operators,
+// compound assignment, functions, if, match, print, and assertions.
+
+def default_price as float
+def price as float(10.5)
+
+def discount as function(value as float, amount as float) (
+  value - amount
+)
+
+price += 2.5
+price -= 3.0
+
+def doubled as float(price * 2.0)
+def half as float(price / 2.0)
+
+def label as string(
+  match price (
+    10.0 => "ten",
+    _ => "other"
+  )
+)
+
+if price == 10.0 (
+  print("float if branch")
+) else (
+  print("float else branch")
+)
+
+print(default_price)
+print(price)
+print(doubled)
+print(half)
+print(label)
+
+assert(default_price == 0.0)
+assert(price == 10.0)
+assert(discount(price, 1.5) == 8.5)
+assert(doubled == 20.0)
+assert(half == 5.0)
+assert(label == "ten")

@@ -1,0 +1,45 @@
+// Integer guide
+// This example shows integer initialization, default values, numeric operators,
+// compound assignment, functions, if, match, print, and assertions.
+
+def default_count as integer
+def count as integer(10)
+
+def add as function(a as integer, b as integer) (
+  a + b
+)
+
+count += 5
+count -= 3
+
+def doubled as integer(count * 2)
+def divided as float(count / 2)
+def remainder as integer(count % 5)
+
+def label as string(
+  match count (
+    12 => "twelve",
+    _ => "other"
+  )
+)
+
+if count == 12 (
+  print("integer if branch")
+) else (
+  print("integer else branch")
+)
+
+print(default_count)
+print(count)
+print(doubled)
+print(divided)
+print(remainder)
+print(label)
+
+assert(default_count == 0)
+assert(count == 12)
+assert(add(count, 8) == 20)
+assert(doubled == 24)
+assert(divided == 6.0)
+assert(remainder == 2)
+assert(label == "twelve")

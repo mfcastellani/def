@@ -1,0 +1,11 @@
+def status as integer(200)
+
+def message as string()
+
+message = match status (
+  200 => "ok",
+  404 => "not found",
+  _ => "unexpected"
+)
+
+assert(message == "ok")

@@ -1,0 +1,36 @@
+def r as request(GET)
+
+def res as response(
+  r.path("https://httpbingo.org/headers")
+   .header(tuple("Accept", "application/json"))
+   .header(tuple("Authorization", "Bearer token"))
+   .do()
+)
+
+def search as string("Accept")
+print("status:        {{res.status()}}")
+print("ok:            {{res.ok()}}")
+print("duration:      {{res.duration()}}ms")
+print("size:          {{res.size()}} bytes")
+print("content-type:  {{res.content_type()}}")
+print("body contains '{{search}}': {{res.body_contains(search)}}")
+print("body:          {{res.body()}}")
+
+def res_from_file as response(
+  def accept_header as string("application/json")
+
+  request(GET)
+    .path("https://httpbingo.org/headers")
+    .headers_from("hdef/headers.hdef")
+    .with_var(accept_header)
+    .do()
+)
+
+def search as string("Authorization")
+print("status:        {{res_from_file.status()}}")
+print("ok:            {{res_from_file.ok()}}")
+print("duration:      {{res_from_file.duration()}}ms")
+print("size:          {{res_from_file.size()}} bytes")
+print("content-type:  {{res_from_file.content_type()}}")
+print("body contains '{{search}}': {{res_from_file.body_contains(search)}}")
+print("body:          {{res_from_file.body()}}")

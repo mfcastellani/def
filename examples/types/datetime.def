@@ -1,0 +1,60 @@
+// DateTime guide
+// A datetime declared without an initializer uses the current system date and time.
+// Use format(...) to render it with Def masks such as hh:mm:ss, dd/mm/yy, or dd/mm/yyyy.
+// This example also shows functions, if, match, print, and assertions.
+
+def now as datetime
+def another_now as datetime()
+def configured as datetime
+
+def only_time as string(now.format("hh:mm:ss"))
+def full_date as string(now.format("dd/mm/yyyy"))
+def literal_value as string()
+
+configured.day(1)
+configured.month(1)
+configured.year(2026)
+configured.hour(8)
+configured.minute(30)
+configured.second(45)
+
+def render_literal as function(value as datetime) (
+  value.format("literal")
+)
+
+def label as string(
+  match render_literal(now) (
+    "literal" => "formatted",
+    _ => "unexpected"
+  )
+)
+
+literal_value = render_literal(now)
+
+if literal_value == "literal" (
+  print("datetime if branch")
+) else (
+  print("datetime else branch")
+)
+
+print(now)
+print(another_now.format("hh:mm:ss dd/mm/yy"))
+print(only_time)
+print(full_date)
+print(configured.format("hh:mm:ss dd/mm/yyyy"))
+print(configured.day())
+print(configured.month())
+print(configured.year())
+print(configured.hour())
+print(configured.minute())
+print(configured.second())
+print(label)
+
+assert(literal_value == "literal")
+assert(configured.day() == 1)
+assert(configured.month() == 1)
+assert(configured.year() == 2026)
+assert(configured.hour() == 8)
+assert(configured.minute() == 30)
+assert(configured.second() == 45)
+assert(label == "formatted")

@@ -1,0 +1,11 @@
+def math as imported("imports/math")
+
+math.variable = "Marcelo"
+
+assert(math.add(10, 12) == 22)
+assert(math.subtract(12, 10) == 2)
+assert(math.divide(12, 3) == 4.0)
+assert(math.multiply(10, 12) == 120)
+assert(math.is_even(12) == true)
+assert(math.parity(13) == "odd")
+assert(math.variable == "Marcelo")

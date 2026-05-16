@@ -1,0 +1,51 @@
+// Array guide
+// Arrays use array(...). They can be empty, indexed, iterated with for,
+// and updated with push(...). Current arrays can hold mixed value types.
+
+// create new array with default value (empty)
+def empty_items as array
+
+// create new array with some values
+def names as array("Marcelo", "Nicolas")
+
+// access array members by id
+def first as string(names[0])
+def second as string(names.get(1))
+
+// add new item to the end of array
+names.push("Felicia")
+
+def length_label as string(
+  match names.len() (
+    3 => "three",
+    _ => "other"
+  )
+)
+
+def count_items as function(items as array) (
+  items.len()
+)
+
+if names.is_empty() == false (
+  print("array is empty")
+) else (
+  print("array is not empty")
+)
+
+print(empty_items.len())
+print(names.len())
+print(first)
+print(second)
+print(length_label)
+
+for name in names (
+  print(name)
+)
+
+assert(empty_items.is_empty() == true)
+assert(names.len() == 3)
+assert(count_items(names) == 3)
+assert(first == "Marcelo")
+assert(second == "Nicolas")
+assert(names[2] == "Felicia")
+assert(length_label == "three")

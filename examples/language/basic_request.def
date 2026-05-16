@@ -1,0 +1,28 @@
+// response object
+
+def r as request(GET)
+
+def res as response(
+  r.path("https://google.com").do()
+)
+
+print(res.body())
+print(res.status())
+
+assert(res.status() == 200)
+
+
+// request.do() coerces to response body in string context
+
+def response_body as string()
+
+def r2 as request(GET)
+
+r2.path("https://google.com")
+
+response_body = r2.do()
+
+def status as integer(r2.status())
+
+print(response_body)
+print(status)

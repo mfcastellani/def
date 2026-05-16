@@ -1,0 +1,41 @@
+// Tuple guide
+// Tuples are simple key/value pairs. The key must be a string.
+// Values can be string, integer, float, or boolean.
+
+def empty_tuple as tuple
+def age as tuple("Age", 48)
+def active as tuple("Active", true)
+
+def key_of as function(item as tuple) (
+  item.key()
+)
+
+def age_label as string(
+  match age.value() (
+    48 => "expected",
+    _ => "unexpected"
+  )
+)
+
+if age.key() == "Age" (
+  print("tuple if branch")
+) else (
+  print("tuple else branch")
+)
+
+print(empty_tuple.key())
+print(empty_tuple.value())
+print(age.key())
+print(age.value())
+print(active.key())
+print(active.value())
+print(key_of(age))
+print(age_label)
+
+assert(empty_tuple.key() == "")
+assert(age.key() == "Age")
+assert(age.value() == 48)
+assert(active.key() == "Active")
+assert(active.value() == true)
+assert(key_of(age) == "Age")
+assert(age_label == "expected")

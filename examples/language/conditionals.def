@@ -1,0 +1,14 @@
+def status as integer(200)
+def message as string()
+
+if status == 200 (
+  message = "ok"
+) else (
+  message = "unexpected"
+)
+
+if not false (
+  print("not condition")
+)
+
+assert(message == "ok")

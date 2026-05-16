@@ -1,0 +1,4 @@
+// headers for HTTPBingo request examples
+Authorization: Bearer token
+Content-Type: application/json
+Accept: {{accept_header}}

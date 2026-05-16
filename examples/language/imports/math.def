@@ -1,0 +1,31 @@
+def variable as string()
+
+def add as function(a as integer, b as integer) (
+  a + b
+)
+
+def subtract as function(a as integer, b as integer) (
+  a - b
+)
+
+def divide as function(a as integer, b as integer) (
+  a / b
+)
+
+def multiply as function(a as integer, b as integer) (
+  a * b
+)
+
+def is_even as function(value as integer) (
+  match value % 2 (
+    0 => true,
+    _ => false
+  )
+)
+
+def parity as function(value as integer) (
+  match value % 2 (
+    0 => "even",
+    _ => "odd"
+  )
+)

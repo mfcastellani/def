@@ -1,0 +1,7 @@
+def sum as function(a as integer, b as integer) (
+  a + b
+)
+
+def n as integer(sum(10, 12))
+
+assert(n == 22)

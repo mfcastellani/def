@@ -1,0 +1,39 @@
+def language as string("Def")
+
+def res as response(
+  request(POST)
+    .path("https://httpbingo.org/anything")
+    .body_from("tdef/body.tdef")
+    .type(TEXT)
+    .with_var(language)
+    .do()
+)
+
+def search as string("language")
+print("status:        {{res.status()}}")
+print("ok:            {{res.ok()}}")
+print("duration:      {{res.duration()}}ms")
+print("size:          {{res.size()}} bytes")
+print("content-type:  {{res.content_type()}}")
+print("body contains '{{search}}': {{res.body_contains(search)}}")
+print("body:          {{res.body()}}")
+
+def res_with_var as response(
+  def language as string("Def Language")
+
+  request(POST)
+    .path("https://httpbingo.org/anything")
+    .body_from("tdef/body.tdef")
+    .type(TEXT)
+    .with_var(language)
+    .do()
+)
+
+def search as string("Def Language")
+print("status:        {{res_with_var.status()}}")
+print("ok:            {{res_with_var.ok()}}")
+print("duration:      {{res_with_var.duration()}}ms")
+print("size:          {{res_with_var.size()}} bytes")
+print("content-type:  {{res_with_var.content_type()}}")
+print("body contains '{{search}}': {{res_with_var.body_contains(search)}}")
+print("body:          {{res_with_var.body()}}")

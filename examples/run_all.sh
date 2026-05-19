@@ -22,6 +22,7 @@ local_examples=(
   "examples/types/integer.def"
   "examples/types/string.def"
   "examples/types/tuple.def"
+  "examples/env/request_env.def"
 )
 
 http_examples=(

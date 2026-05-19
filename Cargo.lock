@@ -80,7 +80,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "def"
+name = "deflang"
 version = "0.1.0"
 dependencies = [
  "chrono",

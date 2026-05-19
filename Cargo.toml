@@ -1,7 +1,17 @@
 [package]
-name = "def"
+name = "deflang"
 version = "0.1.0"
 edition = "2021"
+description = "A scripting language for HTTP workflows"
+license = "MIT"
+repository = "https://github.com/mfcastellani/def"
+readme = "README.md"
+keywords = ["http", "scripting", "testing", "api"]
+categories = ["command-line-utilities", "development-tools::testing"]
+
+[[bin]]
+name = "def"
+path = "src/main.rs"
 
 [dependencies]
 chrono = "0.4"

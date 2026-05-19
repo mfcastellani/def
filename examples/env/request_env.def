@@ -1,0 +1,46 @@
+// Environment variable support in Def
+//
+// .edef files define default values in name=value format.
+// from_env_var reads a variable from the process environment.
+//
+// Resolution order:
+//   1. If the variable is already set in the system environment, it is used
+//      as-is and the .edef value is ignored (a warning is printed to stderr).
+//   2. Otherwise, the value from the .edef file is loaded into the process
+//      environment and then read by from_env_var.
+//
+// from_env_var has no dependency on envvars — it reads directly from the
+// process environment regardless of where the value came from. If the
+// variable is not set in either place, execution aborts with a runtime error:
+//   runtime error: environment variable 'X' is not set
+//
+// Override example:
+//   DEF_EXAMPLE_ENV=staging cargo run -- examples/env/request_env.def
+
+// Load env vars from file — system env takes precedence over file values.
+def env as envvars("edef/settings.edef")
+
+// Read vars that were loaded from the .edef file
+def host    as string().from_env_var("DEF_EXAMPLE_HOST")
+def timeout as string().from_env_var("DEF_EXAMPLE_TIMEOUT")
+def app_env as string().from_env_var("DEF_EXAMPLE_ENV")
+
+print("=== From .edef file ===")
+print("DEF_EXAMPLE_HOST:    {{host}}")
+print("DEF_EXAMPLE_TIMEOUT: {{timeout}}ms")
+print("DEF_EXAMPLE_ENV:     {{app_env}}")
+
+assert(host    == "https://httpbingo.org")
+assert(timeout == "5000")
+
+// Read a variable that lives only in the system environment — no .edef entry needed
+def home as string().from_env_var("HOME")
+
+print("")
+print("=== From system environment ===")
+print("HOME: {{home}}")
+
+assert(home != "")
+
+print("")
+print("All env vars loaded and verified.")

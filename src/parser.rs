@@ -1,7 +1,7 @@
 use crate::ast::{
-    Assignment, AssignmentOperator, AssignmentTarget, BinaryOperator, Expression, ForLoop,
-    FunctionDefinition, IfStatement, ImportDefinition, MatchArm, MatchPattern, Parameter, Program,
-    Statement, Type, UnaryOperator, VariableDefinition,
+    Assignment, AssignmentOperator, AssignmentTarget, BinaryOperator, EnvVarsLoad, Expression,
+    ForLoop, FunctionDefinition, IfStatement, ImportDefinition, MatchArm, MatchPattern, Parameter,
+    Program, Statement, Type, UnaryOperator, VariableDefinition,
 };
 use crate::error::{DefError, DefResult};
 use crate::lexer::Token;
@@ -104,12 +104,25 @@ impl Parser {
             return self.parse_import_definition(name);
         }
 
+        if self.matches(&Token::EnvVars) {
+            return self.parse_envvars_load(name);
+        }
+
         let type_annotation = self.parse_type()?;
         let initializer = if self.matches(&Token::LeftParen) {
             if self.check(&Token::RightParen)
                 && !matches!(type_annotation, Type::Array | Type::Tuple)
             {
                 self.advance();
+                if self.check(&Token::Dot) {
+                    let base = Expression::String(String::new());
+                    let expression = self.parse_postfix_expression(base)?;
+                    return Ok(Statement::VariableDefinition(VariableDefinition {
+                        name,
+                        type_annotation,
+                        initializer: Some(expression),
+                    }));
+                }
                 return Ok(Statement::VariableDefinition(VariableDefinition {
                     name,
                     type_annotation,
@@ -204,6 +217,21 @@ impl Parser {
         self.consume(&Token::RightParen, "expected ')' after import path")?;
 
         Ok(Statement::ImportDefinition(ImportDefinition { name, path }))
+    }
+
+    fn parse_envvars_load(&mut self, name: String) -> DefResult<Statement> {
+        self.consume(&Token::LeftParen, "expected '(' after 'envvars'")?;
+        let path = match self.advance() {
+            Token::String(path) => path,
+            token => {
+                return Err(DefError::Parse(format!(
+                    "expected env file path string, found {token:?}"
+                )));
+            }
+        };
+        self.consume(&Token::RightParen, "expected ')' after env file path")?;
+
+        Ok(Statement::EnvVarsLoad(EnvVarsLoad { name, path }))
     }
 
     fn parse_function_definition(&mut self, name: String) -> DefResult<Statement> {

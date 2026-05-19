@@ -6,6 +6,30 @@ use chrono::Local;
 
 use crate::value::{ResponseValue, Value};
 
+pub(super) fn call_string_method(s: &str, name: &str, args: Vec<Value>) -> DefResult<Value> {
+    match name {
+        "from_env_var" => {
+            if args.len() != 1 {
+                return Err(DefError::Runtime(format!(
+                    "from_env_var expects 1 argument, got {}",
+                    args.len()
+                )));
+            }
+            let Value::String(var_name) = &args[0] else {
+                return Err(DefError::Runtime(
+                    "from_env_var expects a string argument".to_string(),
+                ));
+            };
+            std::env::var(var_name).map(Value::String).map_err(|_| {
+                DefError::Runtime(format!("environment variable '{var_name}' is not set"))
+            })
+        }
+        _ => Err(DefError::Runtime(format!(
+            "undefined string method '{name}' on value {s:?}"
+        ))),
+    }
+}
+
 pub(super) fn printable_value(value: &Value) -> String {
     match value {
         Value::Integer(value) => value.to_string(),

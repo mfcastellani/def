@@ -1,6 +1,6 @@
-# Def
+# DefLang
 
-Def is a scripting language for HTTP workflows. It provides a typed, readable syntax for building requests, validating responses, and chaining multiple API calls,  designed as a programmable alternative to tools like Postman.
+DefLang is a scripting language for HTTP workflows. It provides a typed, readable syntax for building requests, validating responses, and chaining multiple API calls,  designed as a programmable alternative to tools like Postman.
 
 ```def
 def jsonplaceholder as imported("jsonplaceholder")
@@ -16,6 +16,20 @@ print("body:     {{res.body()}}")
 Written in Rust. Currently at an early but functional stage: the language pipeline (lexer, parser, AST, interpreter) is complete and all examples run against live APIs.
 
 ## Running
+
+Install from [crates.io](https://crates.io/crates/deflang):
+
+```bash
+cargo install deflang
+```
+
+This installs the `def` binary. Then run any `.def` file:
+
+```bash
+def examples/types/integer.def
+```
+
+Or run directly from a clone of the repository:
 
 ```bash
 cargo run -- examples/types/integer.def
@@ -260,6 +274,42 @@ assert(math.variable == "updated")
 
 Imports are the primary way to organize multi-file workflows: define API wrappers in one file, orchestrate calls in another.
 
+## Environment Variables
+
+`.edef` files store environment variable defaults in `name=value` format. `//` and `#` lines are treated as comments.
+
+```edef
+# application settings
+API_HOST=https://api.example.com
+API_KEY=dev-key-1234
+TIMEOUT=5000
+```
+
+Load the file with `envvars`:
+
+```def
+def env as envvars("edef/settings.edef")
+```
+
+Read a variable into a string with `from_env_var`:
+
+```def
+def host    as string().from_env_var("API_HOST")
+def timeout as string().from_env_var("TIMEOUT")
+```
+
+**Resolution order**: if the variable is already set in the system environment it takes priority over the `.edef` value, and a warning is printed to stderr:
+
+```
+warning: env var 'API_KEY' defined in 'edef/settings.edef' is already set in the system environment — file value ignored
+```
+
+This means you can ship safe defaults in `.edef` and override them at runtime without changing the file:
+
+```bash
+API_KEY=prod-secret def workflow.def
+```
+
 ## HTTP Requests
 
 Requests are built with a fluent API and executed with `.do()`, which returns a `response`:
@@ -422,6 +472,7 @@ examples/
 ├── headers/           # .hdef usage
 ├── query-string/      # .qdef usage
 ├── body/              # .jdef and .tdef usage
+├── env/               # .edef usage
 └── jsonplaceholder/   # end-to-end workflow against a real API
 ```
 
@@ -436,6 +487,7 @@ The language core is complete and stable:
 - Functions, imports, block scope, `if`/`else`, `for`, `match`
 - Full HTTP client with request building, response inspection, and file-based templates
 - String interpolation in `print`
+- Environment variable loading from `.edef` files with system env precedence
 
 Known limitations:
 

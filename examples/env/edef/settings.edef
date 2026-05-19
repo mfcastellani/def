@@ -1,0 +1,4 @@
+# application settings
+DEF_EXAMPLE_HOST=https://httpbingo.org
+DEF_EXAMPLE_TIMEOUT=5000
+DEF_EXAMPLE_ENV=development

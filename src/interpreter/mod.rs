@@ -5,8 +5,9 @@ use std::{
 };
 
 use crate::ast::{
-    AssignmentOperator, AssignmentTarget, BinaryOperator, Expression, ForLoop, FunctionDefinition,
-    IfStatement, ImportDefinition, MatchArm, Program, Statement, Type, VariableDefinition,
+    AssignmentOperator, AssignmentTarget, BinaryOperator, EnvVarsLoad, Expression, ForLoop,
+    FunctionDefinition, IfStatement, ImportDefinition, MatchArm, Program, Statement, Type,
+    VariableDefinition,
 };
 use crate::error::{DefError, DefResult};
 use crate::lexer::Lexer;
@@ -27,9 +28,10 @@ use datetime::{call_datetime_method, is_datetime_setter};
 use functions::request_value_from_initializer;
 use http::{apply_request_method, call_response_method, new_request_value, RequestMethodResult};
 use values::{
-    apply_assignment_operator, coerce_assignment, coerce_value_to_type, default_value_for_type,
-    evaluate_boolean_binary, evaluate_numeric_binary, evaluate_numeric_comparison, evaluate_unary,
-    is_valid_tuple_value, pattern_matches, printable_value, resolve_import_path,
+    apply_assignment_operator, call_string_method, coerce_assignment, coerce_value_to_type,
+    default_value_for_type, evaluate_boolean_binary, evaluate_numeric_binary,
+    evaluate_numeric_comparison, evaluate_unary, is_valid_tuple_value, pattern_matches,
+    printable_value, resolve_import_path,
 };
 
 type ScopeStack = Vec<HashMap<String, Value>>;
@@ -89,6 +91,10 @@ impl Interpreter {
             }
             Statement::ImportDefinition(import) => {
                 self.define_import(import)?;
+                Ok(Value::Nil)
+            }
+            Statement::EnvVarsLoad(load) => {
+                self.load_env_vars(load)?;
                 Ok(Value::Nil)
             }
             Statement::Assignment(assignment) => {
@@ -281,6 +287,46 @@ impl Interpreter {
         module.interpret(&program)?;
 
         self.imports.insert(import.name.clone(), module);
+        Ok(())
+    }
+
+    fn load_env_vars(&self, load: &EnvVarsLoad) -> DefResult<()> {
+        let path = if std::path::Path::new(&load.path).is_absolute() {
+            std::path::PathBuf::from(&load.path)
+        } else {
+            self.base_dir.join(&load.path)
+        };
+
+        let content = fs::read_to_string(&path).map_err(|error| {
+            DefError::Runtime(format!(
+                "failed to read env file '{}': {error}",
+                path.display()
+            ))
+        })?;
+
+        for line in content.lines() {
+            let line = line.trim();
+            if line.is_empty() || line.starts_with("//") || line.starts_with('#') {
+                continue;
+            }
+            let Some(eq_pos) = line.find('=') else {
+                continue;
+            };
+            let var_name = line[..eq_pos].trim();
+            let var_value = &line[eq_pos + 1..];
+            if var_name.is_empty() {
+                continue;
+            }
+            if std::env::var(var_name).is_ok() {
+                eprintln!(
+                    "warning: env var '{var_name}' defined in '{}' is already set in the system environment — file value ignored",
+                    path.display()
+                );
+            } else {
+                std::env::set_var(var_name, var_value);
+            }
+        }
+
         Ok(())
     }
 
@@ -493,8 +539,9 @@ impl Interpreter {
             Value::Array(items) => call_array_method(items, name, values),
             Value::Tuple { key, value } => call_tuple_method(key, *value, name, values),
             Value::DateTime(value) => call_datetime_method(value, name, values),
+            Value::String(s) => call_string_method(&s, name, values),
             _ => Err(DefError::Runtime(format!(
-                "member function '{name}' is only available on request, response, array, tuple or datetime values"
+                "member function '{name}' is only available on request, response, array, tuple, datetime or string values"
             ))),
         }
     }

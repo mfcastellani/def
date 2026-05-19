@@ -7,6 +7,7 @@ pub struct Program {
 pub enum Statement {
     VariableDefinition(VariableDefinition),
     ImportDefinition(ImportDefinition),
+    EnvVarsLoad(EnvVarsLoad),
     Assignment(Assignment),
     ForLoop(ForLoop),
     IfStatement(IfStatement),
@@ -30,6 +31,12 @@ pub struct IfStatement {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ImportDefinition {
+    pub name: String,
+    pub path: String,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct EnvVarsLoad {
     pub name: String,
     pub path: String,
 }

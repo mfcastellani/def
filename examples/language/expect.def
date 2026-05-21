@@ -1,0 +1,16 @@
+def res as response(
+  request(GET)
+    .path("https://httpbingo.org/anything")
+    .do()
+)
+
+res.expect(ok)
+res.expect(status == 200)
+res.expect(duration < 5000)
+
+// expect calls can be chained
+res.expect(ok).expect(status == 200).expect(duration < 5000)
+
+print("all expectations passed")
+print("status:   {{res.describe_status()}}")
+print("duration: {{res.duration()}}ms")

@@ -7,7 +7,7 @@ use std::{
 use crate::ast::{
     AssignmentOperator, AssignmentTarget, BinaryOperator, EnvVarsLoad, Expression, ForLoop,
     FunctionDefinition, IfStatement, ImportDefinition, MatchArm, Program, Statement, Stmt, Type,
-    VariableDefinition,
+    UnaryOperator, VariableDefinition,
 };
 use crate::error::{DefError, DefResult};
 use crate::lexer::Lexer;
@@ -488,6 +488,68 @@ impl Interpreter {
             })
     }
 
+    fn call_response_expect(
+        &mut self,
+        object: Value,
+        args: &[Expression],
+        scopes: &mut ScopeStack,
+    ) -> DefResult<Value> {
+        let response = match &object {
+            Value::Response(r) => r,
+            _ => {
+                return Err(DefError::Runtime(
+                    "expect is only available on response values".to_string(),
+                ))
+            }
+        };
+
+        if args.len() != 1 {
+            return Err(DefError::Runtime(format!(
+                "expect takes 1 predicate, got {}",
+                args.len()
+            )));
+        }
+
+        let status = response.status;
+        let ok = response.status >= 200 && response.status < 300;
+        let duration = response.duration_ms;
+        let size = response.body.len() as i64;
+        let body = response.body.clone();
+        let content_type = response
+            .headers
+            .iter()
+            .find(|(n, _)| n.to_lowercase() == "content-type")
+            .map(|(_, v)| v.clone())
+            .unwrap_or_default();
+
+        let mut expect_scope = HashMap::new();
+        expect_scope.insert("status".to_string(), Value::Integer(status));
+        expect_scope.insert("ok".to_string(), Value::Boolean(ok));
+        expect_scope.insert("duration".to_string(), Value::Integer(duration));
+        expect_scope.insert("size".to_string(), Value::Integer(size));
+        expect_scope.insert("body".to_string(), Value::String(body));
+        expect_scope.insert("content_type".to_string(), Value::String(content_type));
+
+        scopes.push(expect_scope);
+        let result = self.evaluate_expression(&args[0], scopes);
+        scopes.pop();
+
+        let Value::Boolean(passed) = result? else {
+            return Err(DefError::Runtime(
+                "expect predicate must evaluate to a boolean".to_string(),
+            ));
+        };
+
+        if !passed {
+            let predicate = format_predicate(&args[0]);
+            return Err(DefError::Runtime(format!(
+                "expect({predicate}) failed: status={status}, ok={ok}, duration={duration}ms"
+            )));
+        }
+
+        Ok(object)
+    }
+
     fn call_member_function(
         &mut self,
         object: &Expression,
@@ -495,6 +557,11 @@ impl Interpreter {
         args: &[Expression],
         scopes: &mut ScopeStack,
     ) -> DefResult<Value> {
+        if name == "expect" {
+            let object_val = self.evaluate_expression(object, scopes)?;
+            return self.call_response_expect(object_val, args, scopes);
+        }
+
         let mut values = Vec::with_capacity(args.len());
         for arg in args {
             if name == "with_var" {
@@ -729,6 +796,43 @@ fn assign_scoped_variable(scopes: &mut ScopeStack, name: &str, value: Value) -> 
     Err(DefError::Runtime(format!(
         "invalid assignment: undefined local variable '{name}'"
     )))
+}
+
+fn format_predicate(expr: &Expression) -> String {
+    match expr {
+        Expression::Identifier(name) => name.clone(),
+        Expression::Integer(n) => n.to_string(),
+        Expression::Float(f) => f.to_string(),
+        Expression::String(s) => format!("\"{s}\""),
+        Expression::Boolean(b) => b.to_string(),
+        Expression::Binary {
+            left,
+            operator,
+            right,
+        } => {
+            let op = match operator {
+                BinaryOperator::Equal => "==",
+                BinaryOperator::NotEqual => "!=",
+                BinaryOperator::Greater => ">",
+                BinaryOperator::GreaterEqual => ">=",
+                BinaryOperator::Less => "<",
+                BinaryOperator::LessEqual => "<=",
+                BinaryOperator::And => "and",
+                BinaryOperator::Or => "or",
+                BinaryOperator::Add => "+",
+                BinaryOperator::Subtract => "-",
+                BinaryOperator::Multiply => "*",
+                BinaryOperator::Divide => "/",
+                BinaryOperator::Modulo => "%",
+            };
+            format!("{} {op} {}", format_predicate(left), format_predicate(right))
+        }
+        Expression::Unary {
+            operator: UnaryOperator::Not,
+            expression,
+        } => format!("not {}", format_predicate(expression)),
+        _ => "...".to_string(),
+    }
 }
 
 #[cfg(test)]

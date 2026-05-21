@@ -350,18 +350,19 @@ print("{{res.describe_status()}} in {{res.duration()}}ms")
 
 ### Response methods
 
-| Method                  | Returns   | Description                                       |
-|-------------------------|-----------|---------------------------------------------------|
-| `status()`              | `integer` | HTTP status code                                  |
-| `ok()`                  | `boolean` | true when status is 2xx                           |
-| `describe_status()`     | `string`  | human-readable status label (`"201 Created"`, …)  |
-| `duration()`            | `integer` | round-trip time in milliseconds                   |
-| `size()`                | `integer` | response body size in bytes                       |
-| `body()`                | `string`  | response body                                     |
-| `body_contains(string)` | `boolean` | true when the body contains the given substring   |
-| `content_type()`        | `string`  | value of the `Content-Type` response header       |
-| `header(name)`          | `string`  | value of a specific header (case-insensitive)     |
-| `headers()`             | `array`   | all headers as `tuple(name, value)` elements      |
+| Method                  | Returns    | Description                                       |
+|-------------------------|------------|---------------------------------------------------|
+| `status()`              | `integer`  | HTTP status code                                  |
+| `ok()`                  | `boolean`  | true when status is 2xx                           |
+| `describe_status()`     | `string`   | human-readable status label (`"201 Created"`, …)  |
+| `duration()`            | `integer`  | round-trip time in milliseconds                   |
+| `size()`                | `integer`  | response body size in bytes                       |
+| `body()`                | `string`   | response body                                     |
+| `body_contains(string)` | `boolean`  | true when the body contains the given substring   |
+| `content_type()`        | `string`   | value of the `Content-Type` response header       |
+| `header(name)`          | `string`   | value of a specific header (case-insensitive)     |
+| `headers()`             | `array`    | all headers as `tuple(name, value)` elements      |
+| `expect(predicate)`     | `response` | assert a condition; returns self for chaining     |
 
 ### Headers
 
@@ -478,6 +479,36 @@ request(GET)
   .do()
 ```
 
+### Expect
+
+`expect(predicate)` is a readable alternative to `assert` for response validation. It evaluates the predicate against a set of named response fields and aborts with a descriptive error if it is false. It returns the response, so calls can be chained:
+
+```def
+res.expect(ok)
+res.expect(status == 200)
+res.expect(duration < 5000)
+
+// chainable
+res.expect(ok).expect(status == 200).expect(duration < 5000)
+```
+
+Fields available inside the predicate:
+
+| Field          | Type      | Description                                   |
+|----------------|-----------|-----------------------------------------------|
+| `status`       | `integer` | HTTP status code                              |
+| `ok`           | `boolean` | true when status is 2xx                       |
+| `duration`     | `integer` | round-trip time in milliseconds               |
+| `size`         | `integer` | response body size in bytes                   |
+| `body`         | `string`  | response body                                 |
+| `content_type` | `string`  | value of the `Content-Type` response header   |
+
+When a predicate fails, the error includes the predicate text and current response values:
+
+```
+runtime error: expect(status == 201) failed: status=200, ok=true, duration=142ms
+```
+
 ### Supported HTTP methods
 
 `GET`, `POST`, `PUT`, `PATCH`, `DELETE`, and any other method string accepted by the server.
@@ -511,6 +542,7 @@ The language core is complete and stable:
 - Environment variable loading from `.edef` files with system env precedence
 - Error messages include line number and file name
 - Dry-run mode (`--check`) for syntax validation without execution
+- `expect(predicate)` for readable, chainable response assertions
 
 Known limitations:
 
@@ -518,7 +550,6 @@ Known limitations:
 
 ## Roadmap
 
-- Improve and add standard helpers for response validation.
 - Logical operator improvements.
 
 ## License

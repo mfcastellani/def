@@ -46,6 +46,7 @@ pub fn print_help() {
     text("  datetime       Current date and time with formatting and individual part access");
     text("  delay          Pause execution for a given number of milliseconds");
     text("  envvars        Load environment variable defaults from .edef files");
+    text("  expect         Assert response conditions with readable error messages");
     text("  float          Floating-point numbers and arithmetic operators");
     text("  function       Define and call named user functions");
     text("  headers        Request headers inline or from .hdef template files");
@@ -78,6 +79,7 @@ pub fn print_topic(topic: &str) {
         "datetime" => print_datetime(),
         "delay" => print_delay(),
         "envvars" => print_envvars(),
+        "expect" => print_expect(),
         "float" => print_float(),
         "function" => print_function(),
         "headers" | "hdef" => print_headers(),
@@ -776,6 +778,7 @@ fn print_response() {
     text("  content_type()        Value of the Content-Type response header");
     text("  header(name)          Value of a specific header (case-insensitive)");
     text("  headers()             All headers as an array of tuple(name, value)");
+    text("  expect(predicate)     Assert a condition; aborts with a readable error if false");
     section("EXAMPLE");
     text("  def res as response(");
     text("    request(GET)");
@@ -834,6 +837,45 @@ fn print_string() {
     text("  // Reading from the system environment");
     text("  def home as string().from_env_var(\"HOME\")");
     text("  print(\"home: {{home}}\")");
+}
+
+fn print_expect() {
+    text("EXPECT");
+    section("DESCRIPTION");
+    text("  Asserts a condition on a response value using readable field names.");
+    text("  If the predicate is false, execution aborts with a descriptive error message");
+    text("  that includes the predicate text and the current response values.");
+    text("  expect() returns the response, so calls can be chained.");
+    println!();
+    text("  Available fields inside the predicate:");
+    text("    status         HTTP status code (integer)");
+    text("    ok             True when status is 2xx (boolean)");
+    text("    duration       Round-trip time in milliseconds (integer)");
+    text("    size           Response body size in bytes (integer)");
+    text("    body           Response body (string)");
+    text("    content_type   Value of the Content-Type header (string)");
+    section("SYNTAX");
+    text("  res.expect(predicate)");
+    text("  res.expect(predicate).expect(predicate)   // chainable");
+    section("EXAMPLE");
+    text("  def res as response(");
+    text("    request(GET)");
+    text("      .path(\"https://httpbingo.org/anything\")");
+    text("      .do()");
+    text("  )");
+    println!();
+    text("  res.expect(ok)");
+    text("  res.expect(status == 200)");
+    text("  res.expect(duration < 5000)");
+    println!();
+    text("  // Chainable");
+    text("  res.expect(ok).expect(status == 200).expect(duration < 5000)");
+    println!();
+    text("  // Error message when a predicate fails:");
+    text("  // runtime error: expect(status == 201) failed: status=200, ok=true, duration=142ms");
+    section("SEE ALSO");
+    text("  def --help assert    Global assert() builtin");
+    text("  def --help response  Full list of response methods");
 }
 
 fn print_tuple() {

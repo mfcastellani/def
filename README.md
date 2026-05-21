@@ -49,6 +49,27 @@ Run the test suite:
 cargo test
 ```
 
+## Dry-run / Syntax Check
+
+Add `--check` after the file path to run the script in dry-run mode: the full interpreter executes, but HTTP calls return a stub `200` response instead of hitting the network. `print()` and `delay()` are suppressed. Imports are loaded and validated recursively.
+
+This catches syntax errors, undefined variables, unknown methods, wrong argument counts, and type errors — everything except assertions on HTTP response values.
+
+```bash
+def workflow.def --check
+# workflow.def: syntax ok
+
+def broken.def --check
+# runtime error: unknown request method 'retry' at line 5 in 'broken.def'
+```
+
+All errors include the line number and file name:
+
+```
+parser error: expected ')' after variable initializer at line 5 in 'workflow.def'
+runtime error: undefined identifier 'base_url' at line 12 in 'helpers.def'
+```
+
 ## Basic Syntax
 
 The `def` keyword declares variables and functions. Functions do not use `return`, the last evaluated expression in the body is the return value.
@@ -194,7 +215,7 @@ def http_label as function(code as integer) (
 ## Arrays
 
 ```def
-def names as array("Marcelo", "Ana", "Joao")
+def names as array("Marcelo", "Ana", "Nicolas")
 
 names.push("Def")
 
@@ -340,7 +361,7 @@ print("{{res.describe_status()}} in {{res.duration()}}ms")
 | `body_contains(string)` | `boolean` | true when the body contains the given substring   |
 | `content_type()`        | `string`  | value of the `Content-Type` response header       |
 | `header(name)`          | `string`  | value of a specific header (case-insensitive)     |
-| `headers()`             | `array`   | all headers as `"Name: value"` strings            |
+| `headers()`             | `array`   | all headers as `tuple(name, value)` elements      |
 
 ### Headers
 
@@ -488,16 +509,16 @@ The language core is complete and stable:
 - Full HTTP client with request building, response inspection, and file-based templates
 - String interpolation in `print`
 - Environment variable loading from `.edef` files with system env precedence
+- Error messages include line number and file name
+- Dry-run mode (`--check`) for syntax validation without execution
 
 Known limitations:
 
 - Arithmetic operators only support `integer` and `float`.
-- Error messages do not include line and column numbers yet.
 
 ## Roadmap
 
 - Improve and add standard helpers for response validation.
-- Line and column information in error messages.
 - Logical operator improvements.
 
 ## License

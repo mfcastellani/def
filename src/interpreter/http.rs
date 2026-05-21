@@ -509,7 +509,10 @@ pub(super) fn call_response_method(
                 response
                     .headers
                     .into_iter()
-                    .map(|(name, value)| Value::String(format!("{name}: {value}")))
+                    .map(|(name, value)| Value::Tuple {
+                        key: name,
+                        value: Box::new(Value::String(value)),
+                    })
                     .collect(),
             ))
         }

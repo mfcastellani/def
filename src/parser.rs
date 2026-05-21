@@ -1,23 +1,26 @@
 use crate::ast::{
     Assignment, AssignmentOperator, AssignmentTarget, BinaryOperator, EnvVarsLoad, Expression,
     ForLoop, FunctionDefinition, IfStatement, ImportDefinition, MatchArm, MatchPattern, Parameter,
-    Program, Statement, Type, UnaryOperator, VariableDefinition,
+    Program, Statement, Stmt, Type, UnaryOperator, VariableDefinition,
 };
 use crate::error::{DefError, DefResult};
 use crate::lexer::Token;
 
 pub struct Parser {
-    tokens: Vec<Token>,
+    tokens: Vec<(Token, usize)>,
     position: usize,
+    current_line: usize,
     parsing_match_value: bool,
     parsing_block_header: bool,
 }
 
 impl Parser {
-    pub fn new(tokens: Vec<Token>) -> Self {
+    pub fn new(tokens: Vec<(Token, usize)>) -> Self {
+        let first_line = tokens.first().map(|(_, l)| *l).unwrap_or(1);
         Self {
             tokens,
             position: 0,
+            current_line: first_line,
             parsing_match_value: false,
             parsing_block_header: false,
         }
@@ -35,7 +38,13 @@ impl Parser {
         Ok(Program { statements })
     }
 
-    fn parse_statement(&mut self) -> DefResult<Statement> {
+    fn parse_statement(&mut self) -> DefResult<Stmt> {
+        let line = self.peek_line();
+        let inner = self.parse_statement_kind()?;
+        Ok(Stmt { inner, line })
+    }
+
+    fn parse_statement_kind(&mut self) -> DefResult<Statement> {
         if self.matches(&Token::Def) {
             return self.parse_def_statement();
         }
@@ -73,7 +82,8 @@ impl Parser {
             Token::PlusEqual => Ok(AssignmentOperator::AddAssign),
             Token::MinusEqual => Ok(AssignmentOperator::SubtractAssign),
             token => Err(DefError::Parse(format!(
-                "expected assignment operator, found {token:?}"
+                "expected assignment operator at line {}, found {token:?}",
+                self.current_line
             ))),
         }
     }
@@ -210,7 +220,8 @@ impl Parser {
             Token::String(path) => path,
             token => {
                 return Err(DefError::Parse(format!(
-                    "expected import path string, found {token:?}"
+                    "expected import path string at line {}, found {token:?}",
+                    self.current_line
                 )));
             }
         };
@@ -225,7 +236,8 @@ impl Parser {
             Token::String(path) => path,
             token => {
                 return Err(DefError::Parse(format!(
-                    "expected env file path string, found {token:?}"
+                    "expected env file path string at line {}, found {token:?}",
+                    self.current_line
                 )));
             }
         };
@@ -269,7 +281,7 @@ impl Parser {
     fn parse_statement_block_until_right_paren(
         &mut self,
         context: &str,
-    ) -> DefResult<Vec<Statement>> {
+    ) -> DefResult<Vec<Stmt>> {
         let mut body = Vec::new();
         self.skip_newlines();
         while !self.check(&Token::RightParen) && !self.is_at_end() {
@@ -300,7 +312,10 @@ impl Parser {
             Token::TypeDateTime => Ok(Type::DateTime),
             Token::TypeRequest => Ok(Type::Request),
             Token::Identifier(name) if name == "response" => Ok(Type::Response),
-            token => Err(DefError::Parse(format!("expected type, found {token:?}"))),
+            token => Err(DefError::Parse(format!(
+                "expected type at line {}, found {token:?}",
+                self.current_line
+            ))),
         }
     }
 
@@ -471,7 +486,8 @@ impl Parser {
                     Token::String(method) => method,
                     token => {
                         return Err(DefError::Parse(format!(
-                            "request expression expects an HTTP method, found {token:?}"
+                            "request expression expects an HTTP method at line {}, found {token:?}",
+                            self.current_line
                         )));
                     }
                 };
@@ -495,9 +511,12 @@ impl Parser {
                 self.consume(&Token::RightParen, "expected ')' after expression")?;
                 expression
             }
-            token => Err(DefError::Parse(format!(
-                "expected expression, found {token:?}"
-            )))?,
+            token => {
+                return Err(DefError::Parse(format!(
+                    "expected expression at line {}, found {token:?}",
+                    self.current_line
+                )));
+            }
         };
 
         self.parse_postfix_expression(expression)
@@ -597,6 +616,7 @@ impl Parser {
         self.parsing_match_value = true;
         let value = self.parse_expression();
         self.parsing_match_value = was_parsing_match_value;
+
         let value = value?;
         self.skip_newlines();
         self.consume(&Token::LeftParen, "expected '(' after match value")?;
@@ -633,12 +653,12 @@ impl Parser {
         }
 
         let mut position = self.position + 1;
-        while matches!(self.peek_at(position - self.position), Token::Newline) {
+        while matches!(self.token_at(position), Some(Token::Newline)) {
             position += 1;
         }
 
         if !matches!(
-            self.tokens.get(position),
+            self.token_at(position),
             Some(Token::Integer(_))
                 | Some(Token::Float(_))
                 | Some(Token::String(_))
@@ -649,11 +669,11 @@ impl Parser {
         }
 
         position += 1;
-        while matches!(self.tokens.get(position), Some(Token::Newline)) {
+        while matches!(self.token_at(position), Some(Token::Newline)) {
             position += 1;
         }
 
-        matches!(self.tokens.get(position), Some(Token::FatArrow))
+        matches!(self.token_at(position), Some(Token::FatArrow))
     }
 
     fn left_paren_starts_statement_block(&self) -> bool {
@@ -662,12 +682,12 @@ impl Parser {
         }
 
         let mut position = self.position + 1;
-        while matches!(self.tokens.get(position), Some(Token::Newline)) {
+        while matches!(self.token_at(position), Some(Token::Newline)) {
             position += 1;
         }
 
         matches!(
-            self.tokens.get(position),
+            self.token_at(position),
             Some(Token::Def)
                 | Some(Token::For)
                 | Some(Token::If)
@@ -691,7 +711,8 @@ impl Parser {
             Token::Boolean(value) => Ok(MatchPattern::Boolean(value)),
             Token::Identifier(name) if name == "_" => Ok(MatchPattern::Wildcard),
             token => Err(DefError::Parse(format!(
-                "expected match pattern, found {token:?}"
+                "expected match pattern at line {}, found {token:?}",
+                self.current_line
             ))),
         }
     }
@@ -705,7 +726,8 @@ impl Parser {
             Ok(())
         } else {
             Err(DefError::Parse(format!(
-                "{message}, found {:?}",
+                "{message} at line {}, found {:?}",
+                self.peek_line(),
                 self.peek()
             )))
         }
@@ -714,12 +736,18 @@ impl Parser {
     fn consume_identifier(&mut self, message: &str) -> DefResult<String> {
         match self.advance() {
             Token::Identifier(name) => Ok(name),
-            token => Err(DefError::Parse(format!("{message}, found {token:?}"))),
+            token => Err(DefError::Parse(format!(
+                "{message} at line {}, found {token:?}",
+                self.current_line
+            ))),
         }
     }
 
     fn matches(&mut self, expected: &Token) -> bool {
         if self.check(expected) {
+            if let Some((_, line)) = self.tokens.get(self.position) {
+                self.current_line = *line;
+            }
             self.position += 1;
             true
         } else {
@@ -741,7 +769,11 @@ impl Parser {
     }
 
     fn advance(&mut self) -> Token {
-        let token = self.peek().clone();
+        let (token, line) = match self.tokens.get(self.position) {
+            Some((t, l)) => (t.clone(), *l),
+            None => (Token::Eof, self.current_line),
+        };
+        self.current_line = line;
         if !self.is_at_end() {
             self.position += 1;
         }
@@ -749,17 +781,32 @@ impl Parser {
     }
 
     fn previous(&self) -> &Token {
-        &self.tokens[self.position - 1]
+        &self.tokens[self.position - 1].0
     }
 
     fn peek(&self) -> &Token {
-        self.peek_at(0)
+        self.tokens
+            .get(self.position)
+            .map(|(t, _)| t)
+            .unwrap_or(&Token::Eof)
     }
 
     fn peek_at(&self, offset: usize) -> &Token {
         self.tokens
             .get(self.position + offset)
+            .map(|(t, _)| t)
             .unwrap_or(&Token::Eof)
+    }
+
+    fn token_at(&self, position: usize) -> Option<&Token> {
+        self.tokens.get(position).map(|(t, _)| t)
+    }
+
+    fn peek_line(&self) -> usize {
+        self.tokens
+            .get(self.position)
+            .map(|(_, l)| *l)
+            .unwrap_or(self.current_line)
     }
 
     fn is_at_end(&self) -> bool {
@@ -772,9 +819,12 @@ mod tests {
     use super::*;
     use crate::lexer::Lexer;
 
+    fn s(stmt: Statement) -> Stmt {
+        Stmt { inner: stmt, line: 0 }
+    }
+
     fn parse(input: &str) -> Program {
-        let mut lexer = Lexer::new(input);
-        let tokens = lexer.tokenize().unwrap();
+        let tokens = Lexer::new(input).tokenize().unwrap();
         Parser::new(tokens).parse_program().unwrap()
     }
 
@@ -784,11 +834,11 @@ mod tests {
 
         assert_eq!(
             program.statements,
-            vec![Statement::VariableDefinition(VariableDefinition {
+            vec![s(Statement::VariableDefinition(VariableDefinition {
                 name: "i".to_string(),
                 type_annotation: Type::Integer,
                 initializer: None,
-            })]
+            }))]
         );
     }
 
@@ -798,11 +848,11 @@ mod tests {
 
         assert_eq!(
             program.statements,
-            vec![Statement::VariableDefinition(VariableDefinition {
+            vec![s(Statement::VariableDefinition(VariableDefinition {
                 name: "price".to_string(),
                 type_annotation: Type::Float,
                 initializer: Some(Expression::Float(10.5)),
-            })]
+            }))]
         );
     }
 
@@ -812,11 +862,11 @@ mod tests {
 
         assert_eq!(
             program.statements,
-            vec![Statement::Expression(Expression::Binary {
+            vec![s(Statement::Expression(Expression::Binary {
                 left: Box::new(Expression::Integer(1)),
                 operator: BinaryOperator::Add,
                 right: Box::new(Expression::Integer(2)),
-            })]
+            }))]
         );
     }
 
@@ -825,7 +875,7 @@ mod tests {
         let program = parse("def sum as function(a as integer, b as integer) (\n  a + b\n)");
 
         assert_eq!(program.statements.len(), 1);
-        match &program.statements[0] {
+        match &program.statements[0].inner {
             Statement::FunctionDefinition(function) => {
                 assert_eq!(function.name, "sum");
                 assert_eq!(function.params.len(), 2);
@@ -841,10 +891,10 @@ mod tests {
 
         assert_eq!(
             program.statements,
-            vec![Statement::Expression(Expression::FunctionCall {
+            vec![s(Statement::Expression(Expression::FunctionCall {
                 name: "sum".to_string(),
                 args: vec![Expression::Integer(1), Expression::Integer(2)],
-            })]
+            }))]
         );
     }
 
@@ -854,11 +904,11 @@ mod tests {
 
         assert_eq!(
             program.statements,
-            vec![Statement::VariableDefinition(VariableDefinition {
+            vec![s(Statement::VariableDefinition(VariableDefinition {
                 name: "ok".to_string(),
                 type_annotation: Type::Boolean,
                 initializer: None,
-            })]
+            }))]
         );
     }
 
@@ -868,11 +918,11 @@ mod tests {
 
         assert_eq!(
             program.statements,
-            vec![Statement::VariableDefinition(VariableDefinition {
+            vec![s(Statement::VariableDefinition(VariableDefinition {
                 name: "now".to_string(),
                 type_annotation: Type::DateTime,
                 initializer: None,
-            })]
+            }))]
         );
     }
 
@@ -882,11 +932,11 @@ mod tests {
 
         assert_eq!(
             program.statements,
-            vec![Statement::VariableDefinition(VariableDefinition {
+            vec![s(Statement::VariableDefinition(VariableDefinition {
                 name: "ok".to_string(),
                 type_annotation: Type::Boolean,
                 initializer: Some(Expression::Boolean(true)),
-            })]
+            }))]
         );
     }
 
@@ -896,11 +946,260 @@ mod tests {
 
         assert_eq!(
             program.statements,
-            vec![Statement::VariableDefinition(VariableDefinition {
+            vec![s(Statement::VariableDefinition(VariableDefinition {
                 name: "message".to_string(),
                 type_annotation: Type::String,
                 initializer: None,
-            })]
+            }))]
+        );
+    }
+
+    #[test]
+    fn parses_for_loop() {
+        let program = parse("for name in names (\n  print(name)\n)");
+
+        assert_eq!(program.statements.len(), 1);
+        match &program.statements[0].inner {
+            Statement::ForLoop(for_loop) => {
+                assert_eq!(for_loop.variable, "name");
+                assert_eq!(
+                    for_loop.iterable,
+                    Expression::Identifier("names".to_string())
+                );
+                assert_eq!(for_loop.body.len(), 1);
+            }
+            statement => panic!("expected for loop, found {statement:?}"),
+        }
+    }
+
+    #[test]
+    fn parses_if_statement() {
+        let program = parse("if true (\n  print(\"ok\")\n)");
+
+        assert_eq!(program.statements.len(), 1);
+        match &program.statements[0].inner {
+            Statement::IfStatement(if_statement) => {
+                assert_eq!(if_statement.condition, Expression::Boolean(true));
+                assert_eq!(if_statement.then_body.len(), 1);
+                assert!(if_statement.else_body.is_empty());
+            }
+            statement => panic!("expected if statement, found {statement:?}"),
+        }
+    }
+
+    #[test]
+    fn parses_if_else_statement() {
+        let program = parse("if true (\n  print(\"ok\")\n) else (\n  print(\"error\")\n)");
+
+        assert_eq!(
+            program.statements,
+            vec![s(Statement::IfStatement(IfStatement {
+                condition: Expression::Boolean(true),
+                then_body: vec![s(Statement::Expression(Expression::FunctionCall {
+                    name: "print".to_string(),
+                    args: vec![Expression::String("ok".to_string())],
+                }))],
+                else_body: vec![s(Statement::Expression(Expression::FunctionCall {
+                    name: "print".to_string(),
+                    args: vec![Expression::String("error".to_string())],
+                }))],
+            }))]
+        );
+    }
+
+    #[test]
+    fn parses_match_expression() {
+        let program = parse("match n (\n  1 => \"one\",\n  _ => \"other\"\n)");
+
+        assert_eq!(
+            program.statements,
+            vec![s(Statement::Expression(Expression::Match {
+                value: Box::new(Expression::Identifier("n".to_string())),
+                arms: vec![
+                    MatchArm {
+                        pattern: MatchPattern::Integer(1),
+                        expression: Expression::String("one".to_string()),
+                    },
+                    MatchArm {
+                        pattern: MatchPattern::Wildcard,
+                        expression: Expression::String("other".to_string()),
+                    },
+                ],
+            }))]
+        );
+    }
+
+    #[test]
+    fn parses_assignment_with_match_expression() {
+        let program =
+            parse("message = match status (\n  200 => \"ok\",\n  _ => \"unexpected\"\n)");
+
+        assert_eq!(
+            program.statements,
+            vec![s(Statement::Assignment(Assignment {
+                target: AssignmentTarget::Identifier("message".to_string()),
+                operator: AssignmentOperator::Assign,
+                expression: Expression::Match {
+                    value: Box::new(Expression::Identifier("status".to_string())),
+                    arms: vec![
+                        MatchArm {
+                            pattern: MatchPattern::Integer(200),
+                            expression: Expression::String("ok".to_string()),
+                        },
+                        MatchArm {
+                            pattern: MatchPattern::Wildcard,
+                            expression: Expression::String("unexpected".to_string()),
+                        },
+                    ],
+                },
+            }))]
+        );
+    }
+
+    #[test]
+    fn parses_import_definition() {
+        let program = parse("def math as imported(\"imports/math\")");
+
+        assert_eq!(
+            program.statements,
+            vec![s(Statement::ImportDefinition(ImportDefinition {
+                name: "math".to_string(),
+                path: "imports/math".to_string(),
+            }))]
+        );
+    }
+
+    #[test]
+    fn parses_member_function_call() {
+        let program = parse("math.add(10, 12)");
+
+        assert_eq!(
+            program.statements,
+            vec![s(Statement::Expression(Expression::MemberFunctionCall {
+                object: Box::new(Expression::Identifier("math".to_string())),
+                name: "add".to_string(),
+                args: vec![Expression::Integer(10), Expression::Integer(12)],
+            }))]
+        );
+    }
+
+    #[test]
+    fn parses_chained_member_function_call() {
+        let program = parse("r.path(\"https://example.com\").do()");
+
+        assert_eq!(
+            program.statements,
+            vec![s(Statement::Expression(Expression::MemberFunctionCall {
+                object: Box::new(Expression::MemberFunctionCall {
+                    object: Box::new(Expression::Identifier("r".to_string())),
+                    name: "path".to_string(),
+                    args: vec![Expression::String("https://example.com".to_string())],
+                }),
+                name: "do".to_string(),
+                args: Vec::new(),
+            }))]
+        );
+    }
+
+    #[test]
+    fn parses_member_assignment() {
+        let program = parse("math.variable = \"Marcelo\"");
+
+        assert_eq!(
+            program.statements,
+            vec![s(Statement::Assignment(Assignment {
+                target: AssignmentTarget::Member {
+                    object: "math".to_string(),
+                    member: "variable".to_string(),
+                },
+                operator: AssignmentOperator::Assign,
+                expression: Expression::String("Marcelo".to_string()),
+            }))]
+        );
+    }
+
+    #[test]
+    fn parses_equality_expression() {
+        let program = parse("1 + 2 == 3");
+
+        assert_eq!(
+            program.statements,
+            vec![s(Statement::Expression(Expression::Binary {
+                left: Box::new(Expression::Binary {
+                    left: Box::new(Expression::Integer(1)),
+                    operator: BinaryOperator::Add,
+                    right: Box::new(Expression::Integer(2)),
+                }),
+                operator: BinaryOperator::Equal,
+                right: Box::new(Expression::Integer(3)),
+            }))]
+        );
+    }
+
+    #[test]
+    fn parses_comparison_expression() {
+        let program = parse("1 + 2 >= 3");
+
+        assert_eq!(
+            program.statements,
+            vec![s(Statement::Expression(Expression::Binary {
+                left: Box::new(Expression::Binary {
+                    left: Box::new(Expression::Integer(1)),
+                    operator: BinaryOperator::Add,
+                    right: Box::new(Expression::Integer(2)),
+                }),
+                operator: BinaryOperator::GreaterEqual,
+                right: Box::new(Expression::Integer(3)),
+            }))]
+        );
+    }
+
+    #[test]
+    fn parses_not_equal_expression() {
+        let program = parse("true != false");
+
+        assert_eq!(
+            program.statements,
+            vec![s(Statement::Expression(Expression::Binary {
+                left: Box::new(Expression::Boolean(true)),
+                operator: BinaryOperator::NotEqual,
+                right: Box::new(Expression::Boolean(false)),
+            }))]
+        );
+    }
+
+    #[test]
+    fn parses_boolean_operator_expression() {
+        let program = parse("true and false or true");
+
+        assert_eq!(
+            program.statements,
+            vec![s(Statement::Expression(Expression::Binary {
+                left: Box::new(Expression::Binary {
+                    left: Box::new(Expression::Boolean(true)),
+                    operator: BinaryOperator::And,
+                    right: Box::new(Expression::Boolean(false)),
+                }),
+                operator: BinaryOperator::Or,
+                right: Box::new(Expression::Boolean(true)),
+            }))]
+        );
+    }
+
+    #[test]
+    fn parses_not_expression() {
+        let program = parse("not true or false");
+
+        assert_eq!(
+            program.statements,
+            vec![s(Statement::Expression(Expression::Binary {
+                left: Box::new(Expression::Unary {
+                    operator: UnaryOperator::Not,
+                    expression: Box::new(Expression::Boolean(true)),
+                }),
+                operator: BinaryOperator::Or,
+                right: Box::new(Expression::Boolean(false)),
+            }))]
         );
     }
 
@@ -910,7 +1209,7 @@ mod tests {
 
         assert_eq!(
             program.statements,
-            vec![Statement::VariableDefinition(VariableDefinition {
+            vec![s(Statement::VariableDefinition(VariableDefinition {
                 name: "res".to_string(),
                 type_annotation: Type::Response,
                 initializer: Some(Expression::MemberFunctionCall {
@@ -922,7 +1221,7 @@ mod tests {
                     name: "do".to_string(),
                     args: Vec::new(),
                 }),
-            })]
+            }))]
         );
     }
 
@@ -933,7 +1232,7 @@ mod tests {
         );
 
         assert_eq!(program.statements.len(), 1);
-        let Statement::VariableDefinition(variable) = &program.statements[0] else {
+        let Statement::VariableDefinition(variable) = &program.statements[0].inner else {
             panic!("expected variable definition");
         };
         assert_eq!(variable.name, "res");
@@ -952,7 +1251,7 @@ mod tests {
 
         assert_eq!(
             program.statements,
-            vec![Statement::VariableDefinition(VariableDefinition {
+            vec![s(Statement::VariableDefinition(VariableDefinition {
                 name: "res".to_string(),
                 type_annotation: Type::Response,
                 initializer: Some(Expression::MemberFunctionCall {
@@ -973,7 +1272,7 @@ mod tests {
                     name: "do".to_string(),
                     args: Vec::new(),
                 }),
-            })]
+            }))]
         );
     }
 
@@ -983,14 +1282,14 @@ mod tests {
 
         assert_eq!(
             program.statements,
-            vec![Statement::VariableDefinition(VariableDefinition {
+            vec![s(Statement::VariableDefinition(VariableDefinition {
                 name: "n".to_string(),
                 type_annotation: Type::Integer,
                 initializer: Some(Expression::FunctionCall {
                     name: "sum".to_string(),
                     args: vec![Expression::Integer(10), Expression::Integer(12)],
                 }),
-            })]
+            }))]
         );
     }
 
@@ -1000,11 +1299,11 @@ mod tests {
 
         assert_eq!(
             program.statements,
-            vec![Statement::Assignment(Assignment {
+            vec![s(Statement::Assignment(Assignment {
                 target: AssignmentTarget::Identifier("a".to_string()),
                 operator: AssignmentOperator::Assign,
                 expression: Expression::Integer(10),
-            })]
+            }))]
         );
     }
 
@@ -1015,16 +1314,16 @@ mod tests {
         assert_eq!(
             program.statements,
             vec![
-                Statement::Assignment(Assignment {
+                s(Statement::Assignment(Assignment {
                     target: AssignmentTarget::Identifier("a".to_string()),
                     operator: AssignmentOperator::AddAssign,
                     expression: Expression::Integer(10),
-                }),
-                Statement::Assignment(Assignment {
+                })),
+                s(Statement::Assignment(Assignment {
                     target: AssignmentTarget::Identifier("b".to_string()),
                     operator: AssignmentOperator::SubtractAssign,
                     expression: Expression::Integer(2),
-                }),
+                })),
             ]
         );
     }
@@ -1035,7 +1334,7 @@ mod tests {
 
         assert_eq!(
             program.statements,
-            vec![Statement::Expression(Expression::Array(Vec::new()))]
+            vec![s(Statement::Expression(Expression::Array(Vec::new())))]
         );
     }
 
@@ -1045,7 +1344,7 @@ mod tests {
 
         assert_eq!(
             program.statements,
-            vec![Statement::Expression(Expression::FunctionCall {
+            vec![s(Statement::Expression(Expression::FunctionCall {
                 name: "assert".to_string(),
                 args: vec![Expression::Binary {
                     left: Box::new(Expression::Binary {
@@ -1056,7 +1355,7 @@ mod tests {
                     operator: BinaryOperator::Equal,
                     right: Box::new(Expression::Integer(3)),
                 }],
-            })]
+            }))]
         );
     }
 
@@ -1066,7 +1365,7 @@ mod tests {
 
         assert_eq!(
             program.statements,
-            vec![Statement::Expression(Expression::FunctionCall {
+            vec![s(Statement::Expression(Expression::FunctionCall {
                 name: "assert".to_string(),
                 args: vec![Expression::Binary {
                     left: Box::new(Expression::Binary {
@@ -1077,222 +1376,7 @@ mod tests {
                     operator: BinaryOperator::Equal,
                     right: Box::new(Expression::Integer(3)),
                 }],
-            })]
-        );
-    }
-
-    #[test]
-    fn parses_if_else_statement() {
-        let program = parse("if true (\n  print(\"ok\")\n) else (\n  print(\"error\")\n)");
-
-        assert_eq!(
-            program.statements,
-            vec![Statement::IfStatement(IfStatement {
-                condition: Expression::Boolean(true),
-                then_body: vec![Statement::Expression(Expression::FunctionCall {
-                    name: "print".to_string(),
-                    args: vec![Expression::String("ok".to_string())],
-                })],
-                else_body: vec![Statement::Expression(Expression::FunctionCall {
-                    name: "print".to_string(),
-                    args: vec![Expression::String("error".to_string())],
-                })],
-            })]
-        );
-    }
-
-    #[test]
-    fn parses_match_expression() {
-        let program = parse("match n (\n  1 => \"one\",\n  _ => \"other\"\n)");
-
-        assert_eq!(
-            program.statements,
-            vec![Statement::Expression(Expression::Match {
-                value: Box::new(Expression::Identifier("n".to_string())),
-                arms: vec![
-                    MatchArm {
-                        pattern: MatchPattern::Integer(1),
-                        expression: Expression::String("one".to_string()),
-                    },
-                    MatchArm {
-                        pattern: MatchPattern::Wildcard,
-                        expression: Expression::String("other".to_string()),
-                    },
-                ],
-            })]
-        );
-    }
-
-    #[test]
-    fn parses_assignment_with_match_expression() {
-        let program = parse("message = match status (\n  200 => \"ok\",\n  _ => \"unexpected\"\n)");
-
-        assert_eq!(
-            program.statements,
-            vec![Statement::Assignment(Assignment {
-                target: AssignmentTarget::Identifier("message".to_string()),
-                operator: AssignmentOperator::Assign,
-                expression: Expression::Match {
-                    value: Box::new(Expression::Identifier("status".to_string())),
-                    arms: vec![
-                        MatchArm {
-                            pattern: MatchPattern::Integer(200),
-                            expression: Expression::String("ok".to_string()),
-                        },
-                        MatchArm {
-                            pattern: MatchPattern::Wildcard,
-                            expression: Expression::String("unexpected".to_string()),
-                        },
-                    ],
-                },
-            })]
-        );
-    }
-
-    #[test]
-    fn parses_import_definition() {
-        let program = parse("def math as imported(\"imports/math\")");
-
-        assert_eq!(
-            program.statements,
-            vec![Statement::ImportDefinition(ImportDefinition {
-                name: "math".to_string(),
-                path: "imports/math".to_string(),
-            })]
-        );
-    }
-
-    #[test]
-    fn parses_member_function_call() {
-        let program = parse("math.add(10, 12)");
-
-        assert_eq!(
-            program.statements,
-            vec![Statement::Expression(Expression::MemberFunctionCall {
-                object: Box::new(Expression::Identifier("math".to_string())),
-                name: "add".to_string(),
-                args: vec![Expression::Integer(10), Expression::Integer(12)],
-            })]
-        );
-    }
-
-    #[test]
-    fn parses_chained_member_function_call() {
-        let program = parse("r.path(\"https://example.com\").do()");
-
-        assert_eq!(
-            program.statements,
-            vec![Statement::Expression(Expression::MemberFunctionCall {
-                object: Box::new(Expression::MemberFunctionCall {
-                    object: Box::new(Expression::Identifier("r".to_string())),
-                    name: "path".to_string(),
-                    args: vec![Expression::String("https://example.com".to_string())],
-                }),
-                name: "do".to_string(),
-                args: Vec::new(),
-            })]
-        );
-    }
-
-    #[test]
-    fn parses_member_assignment() {
-        let program = parse("math.variable = \"Marcelo\"");
-
-        assert_eq!(
-            program.statements,
-            vec![Statement::Assignment(Assignment {
-                target: AssignmentTarget::Member {
-                    object: "math".to_string(),
-                    member: "variable".to_string(),
-                },
-                operator: AssignmentOperator::Assign,
-                expression: Expression::String("Marcelo".to_string()),
-            })]
-        );
-    }
-
-    #[test]
-    fn parses_equality_expression() {
-        let program = parse("1 + 2 == 3");
-
-        assert_eq!(
-            program.statements,
-            vec![Statement::Expression(Expression::Binary {
-                left: Box::new(Expression::Binary {
-                    left: Box::new(Expression::Integer(1)),
-                    operator: BinaryOperator::Add,
-                    right: Box::new(Expression::Integer(2)),
-                }),
-                operator: BinaryOperator::Equal,
-                right: Box::new(Expression::Integer(3)),
-            })]
-        );
-    }
-
-    #[test]
-    fn parses_comparison_expression() {
-        let program = parse("1 + 2 >= 3");
-
-        assert_eq!(
-            program.statements,
-            vec![Statement::Expression(Expression::Binary {
-                left: Box::new(Expression::Binary {
-                    left: Box::new(Expression::Integer(1)),
-                    operator: BinaryOperator::Add,
-                    right: Box::new(Expression::Integer(2)),
-                }),
-                operator: BinaryOperator::GreaterEqual,
-                right: Box::new(Expression::Integer(3)),
-            })]
-        );
-    }
-
-    #[test]
-    fn parses_not_equal_expression() {
-        let program = parse("true != false");
-
-        assert_eq!(
-            program.statements,
-            vec![Statement::Expression(Expression::Binary {
-                left: Box::new(Expression::Boolean(true)),
-                operator: BinaryOperator::NotEqual,
-                right: Box::new(Expression::Boolean(false)),
-            })]
-        );
-    }
-
-    #[test]
-    fn parses_boolean_operator_expression() {
-        let program = parse("true and false or true");
-
-        assert_eq!(
-            program.statements,
-            vec![Statement::Expression(Expression::Binary {
-                left: Box::new(Expression::Binary {
-                    left: Box::new(Expression::Boolean(true)),
-                    operator: BinaryOperator::And,
-                    right: Box::new(Expression::Boolean(false)),
-                }),
-                operator: BinaryOperator::Or,
-                right: Box::new(Expression::Boolean(true)),
-            })]
-        );
-    }
-
-    #[test]
-    fn parses_not_expression() {
-        let program = parse("not true or false");
-
-        assert_eq!(
-            program.statements,
-            vec![Statement::Expression(Expression::Binary {
-                left: Box::new(Expression::Unary {
-                    operator: UnaryOperator::Not,
-                    expression: Box::new(Expression::Boolean(true)),
-                }),
-                operator: BinaryOperator::Or,
-                right: Box::new(Expression::Boolean(false)),
-            })]
+            }))]
         );
     }
 }

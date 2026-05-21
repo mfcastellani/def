@@ -1,6 +1,6 @@
 use std::{collections::HashMap, thread, time::Duration};
 
-use crate::ast::{Expression, FunctionDefinition, Statement};
+use crate::ast::{Expression, FunctionDefinition, Statement, Stmt};
 use crate::error::{DefError, DefResult};
 use crate::lexer::Lexer;
 use crate::parser::Parser;
@@ -78,8 +78,8 @@ impl Interpreter {
 
         let mut function_scopes = vec![function_scope];
         let mut last_value = Value::Nil;
-        for statement in &function.body {
-            last_value = self.execute_statement(statement, &mut function_scopes)?;
+        for stmt in &function.body {
+            last_value = self.execute_statement(&stmt.inner, &mut function_scopes)?;
         }
 
         Ok(last_value)
@@ -115,6 +115,10 @@ impl Interpreter {
             )));
         }
 
+        if self.dry_run {
+            return Ok(Value::Nil);
+        }
+
         let milliseconds = self.evaluate_expression(&args[0], scopes)?;
         let Value::Integer(milliseconds) = milliseconds else {
             return Err(DefError::Runtime(
@@ -138,6 +142,10 @@ impl Interpreter {
                 "print expects 1 argument, got {}",
                 args.len()
             )));
+        }
+
+        if self.dry_run {
+            return Ok(Value::Nil);
         }
 
         if let Expression::String(template) = &args[0] {
@@ -183,7 +191,10 @@ impl Interpreter {
                 DefError::Runtime(format!("invalid expression in print template: {e}"))
             })?;
 
-            let Some(Statement::Expression(expression)) = program.statements.into_iter().next()
+            let Some(Stmt {
+                inner: Statement::Expression(expression),
+                ..
+            }) = program.statements.into_iter().next()
             else {
                 return Err(DefError::Runtime(
                     "print template placeholder must be an expression".to_string(),

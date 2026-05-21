@@ -1,6 +1,18 @@
+#[derive(Debug, Clone)]
+pub struct Stmt {
+    pub inner: Statement,
+    pub line: usize,
+}
+
+impl PartialEq for Stmt {
+    fn eq(&self, other: &Self) -> bool {
+        self.inner == other.inner
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct Program {
-    pub statements: Vec<Statement>,
+    pub statements: Vec<Stmt>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -19,14 +31,14 @@ pub enum Statement {
 pub struct ForLoop {
     pub variable: String,
     pub iterable: Expression,
-    pub body: Vec<Statement>,
+    pub body: Vec<Stmt>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct IfStatement {
     pub condition: Expression,
-    pub then_body: Vec<Statement>,
-    pub else_body: Vec<Statement>,
+    pub then_body: Vec<Stmt>,
+    pub else_body: Vec<Stmt>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -72,7 +84,7 @@ pub enum AssignmentTarget {
 pub struct FunctionDefinition {
     pub name: String,
     pub params: Vec<Parameter>,
-    pub body: Vec<Statement>,
+    pub body: Vec<Stmt>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -136,7 +148,7 @@ pub enum Expression {
         value: Box<Expression>,
         arms: Vec<MatchArm>,
     },
-    Block(Vec<Statement>),
+    Block(Vec<Stmt>),
 }
 
 #[derive(Debug, Clone, PartialEq)]

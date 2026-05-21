@@ -56,6 +56,7 @@ pub enum Token {
 pub struct Lexer {
     input: Vec<char>,
     position: usize,
+    line: usize,
 }
 
 impl Lexer {
@@ -63,80 +64,82 @@ impl Lexer {
         Self {
             input: input.chars().collect(),
             position: 0,
+            line: 1,
         }
     }
 
-    pub fn tokenize(&mut self) -> DefResult<Vec<Token>> {
+    pub fn tokenize(&mut self) -> DefResult<Vec<(Token, usize)>> {
         let mut tokens = Vec::new();
 
         while let Some(ch) = self.peek() {
+            let line = self.line;
             match ch {
                 ' ' | '\t' | '\r' => {
                     self.advance();
                 }
                 '\n' => {
                     self.advance();
-                    tokens.push(Token::Newline);
+                    self.line += 1;
+                    tokens.push((Token::Newline, line));
                 }
                 '+' => {
                     if self.peek_next() == Some('=') {
                         self.advance();
                         self.advance();
-                        tokens.push(Token::PlusEqual);
+                        tokens.push((Token::PlusEqual, line));
                     } else {
                         self.advance();
-                        tokens.push(Token::Plus);
+                        tokens.push((Token::Plus, line));
                     }
                 }
                 '-' => {
                     if self.peek_next() == Some('=') {
                         self.advance();
                         self.advance();
-                        tokens.push(Token::MinusEqual);
+                        tokens.push((Token::MinusEqual, line));
                     } else {
                         self.advance();
-                        tokens.push(Token::Minus);
+                        tokens.push((Token::Minus, line));
                     }
                 }
                 '*' => {
                     self.advance();
-                    tokens.push(Token::Star);
+                    tokens.push((Token::Star, line));
                 }
                 '%' => {
                     self.advance();
-                    tokens.push(Token::Percent);
+                    tokens.push((Token::Percent, line));
                 }
                 '/' => {
                     if self.peek_next() == Some('/') {
                         self.skip_comment();
                     } else {
                         self.advance();
-                        tokens.push(Token::Slash);
+                        tokens.push((Token::Slash, line));
                     }
                 }
                 '=' => {
                     if self.peek_next() == Some('>') {
                         self.advance();
                         self.advance();
-                        tokens.push(Token::FatArrow);
+                        tokens.push((Token::FatArrow, line));
                     } else if self.peek_next() == Some('=') {
                         self.advance();
                         self.advance();
-                        tokens.push(Token::EqualEqual);
+                        tokens.push((Token::EqualEqual, line));
                     } else {
                         self.advance();
-                        tokens.push(Token::Equal);
+                        tokens.push((Token::Equal, line));
                     }
                 }
                 '!' => {
                     if self.peek_next() == Some('=') {
                         self.advance();
                         self.advance();
-                        tokens.push(Token::BangEqual);
+                        tokens.push((Token::BangEqual, line));
                     } else {
                         return Err(DefError::Lex(format!(
-                            "unexpected character '!' at position {}",
-                            self.position
+                            "unexpected character '!' at line {line}"
                         )));
                     }
                 }
@@ -144,63 +147,62 @@ impl Lexer {
                     if self.peek_next() == Some('=') {
                         self.advance();
                         self.advance();
-                        tokens.push(Token::GreaterEqual);
+                        tokens.push((Token::GreaterEqual, line));
                     } else {
                         self.advance();
-                        tokens.push(Token::Greater);
+                        tokens.push((Token::Greater, line));
                     }
                 }
                 '<' => {
                     if self.peek_next() == Some('=') {
                         self.advance();
                         self.advance();
-                        tokens.push(Token::LessEqual);
+                        tokens.push((Token::LessEqual, line));
                     } else {
                         self.advance();
-                        tokens.push(Token::Less);
+                        tokens.push((Token::Less, line));
                     }
                 }
                 '(' => {
                     self.advance();
-                    tokens.push(Token::LeftParen);
+                    tokens.push((Token::LeftParen, line));
                 }
                 '[' => {
                     self.advance();
-                    tokens.push(Token::LeftBracket);
+                    tokens.push((Token::LeftBracket, line));
                 }
                 ']' => {
                     self.advance();
-                    tokens.push(Token::RightBracket);
+                    tokens.push((Token::RightBracket, line));
                 }
                 ')' => {
                     self.advance();
-                    tokens.push(Token::RightParen);
+                    tokens.push((Token::RightParen, line));
                 }
                 ',' => {
                     self.advance();
-                    tokens.push(Token::Comma);
+                    tokens.push((Token::Comma, line));
                 }
                 '.' => {
                     self.advance();
-                    tokens.push(Token::Dot);
+                    tokens.push((Token::Dot, line));
                 }
-                '"' => tokens.push(self.read_string()?),
-                ch if ch.is_ascii_digit() => tokens.push(self.read_numeric_literal()?),
-                ch if is_identifier_start(ch) => tokens.push(self.read_identifier()),
+                '"' => tokens.push((self.read_string(line)?, line)),
+                ch if ch.is_ascii_digit() => tokens.push((self.read_numeric_literal()?, line)),
+                ch if is_identifier_start(ch) => tokens.push((self.read_identifier(), line)),
                 other => {
                     return Err(DefError::Lex(format!(
-                        "unexpected character '{other}' at position {}",
-                        self.position
+                        "unexpected character '{other}' at line {line}"
                     )));
                 }
             }
         }
 
-        tokens.push(Token::Eof);
+        tokens.push((Token::Eof, self.line));
         Ok(tokens)
     }
 
-    fn read_string(&mut self) -> DefResult<Token> {
+    fn read_string(&mut self, start_line: usize) -> DefResult<Token> {
         self.advance();
         let mut value = String::new();
 
@@ -213,7 +215,9 @@ impl Lexer {
             self.advance();
         }
 
-        Err(DefError::Lex("unterminated string literal".to_string()))
+        Err(DefError::Lex(format!(
+            "unterminated string literal at line {start_line}"
+        )))
     }
 
     fn read_numeric_literal(&mut self) -> DefResult<Token> {
@@ -319,13 +323,19 @@ fn is_identifier_part(ch: char) -> bool {
 mod tests {
     use super::*;
 
+    fn tokenize(input: &str) -> Vec<Token> {
+        Lexer::new(input)
+            .tokenize()
+            .unwrap()
+            .into_iter()
+            .map(|(t, _)| t)
+            .collect()
+    }
+
     #[test]
     fn lexes_integer_variable_definition() {
-        let mut lexer = Lexer::new("def i as integer");
-        let tokens = lexer.tokenize().unwrap();
-
         assert_eq!(
-            tokens,
+            tokenize("def i as integer"),
             vec![
                 Token::Def,
                 Token::Identifier("i".to_string()),
@@ -338,11 +348,8 @@ mod tests {
 
     #[test]
     fn lexes_arithmetic_expression() {
-        let mut lexer = Lexer::new("1 + 2");
-        let tokens = lexer.tokenize().unwrap();
-
         assert_eq!(
-            tokens,
+            tokenize("1 + 2"),
             vec![
                 Token::Integer(1),
                 Token::Plus,
@@ -354,11 +361,8 @@ mod tests {
 
     #[test]
     fn lexes_float_type_and_literal() {
-        let mut lexer = Lexer::new("def price as float(10.5)");
-        let tokens = lexer.tokenize().unwrap();
-
         assert_eq!(
-            tokens,
+            tokenize("def price as float(10.5)"),
             vec![
                 Token::Def,
                 Token::Identifier("price".to_string()),
@@ -374,11 +378,8 @@ mod tests {
 
     #[test]
     fn lexes_boolean_variable_definition_and_literal() {
-        let mut lexer = Lexer::new("def ok as boolean\ntrue");
-        let tokens = lexer.tokenize().unwrap();
-
         assert_eq!(
-            tokens,
+            tokenize("def ok as boolean\ntrue"),
             vec![
                 Token::Def,
                 Token::Identifier("ok".to_string()),
@@ -393,11 +394,8 @@ mod tests {
 
     #[test]
     fn lexes_datetime_variable_definition() {
-        let mut lexer = Lexer::new("def now as datetime");
-        let tokens = lexer.tokenize().unwrap();
-
         assert_eq!(
-            tokens,
+            tokenize("def now as datetime"),
             vec![
                 Token::Def,
                 Token::Identifier("now".to_string()),
@@ -410,11 +408,8 @@ mod tests {
 
     #[test]
     fn lexes_assignment() {
-        let mut lexer = Lexer::new("a = 10");
-        let tokens = lexer.tokenize().unwrap();
-
         assert_eq!(
-            tokens,
+            tokenize("a = 10"),
             vec![
                 Token::Identifier("a".to_string()),
                 Token::Equal,
@@ -426,11 +421,8 @@ mod tests {
 
     #[test]
     fn lexes_compound_and_equality_operators() {
-        let mut lexer = Lexer::new("a += 10\nb -= 2\na == b\na != b\na > b\na >= b\na < b\na <= b");
-        let tokens = lexer.tokenize().unwrap();
-
         assert_eq!(
-            tokens,
+            tokenize("a += 10\nb -= 2\na == b\na != b\na > b\na >= b\na < b\na <= b"),
             vec![
                 Token::Identifier("a".to_string()),
                 Token::PlusEqual,
@@ -470,11 +462,8 @@ mod tests {
 
     #[test]
     fn lexes_boolean_operators() {
-        let mut lexer = Lexer::new("not true and false or true");
-        let tokens = lexer.tokenize().unwrap();
-
         assert_eq!(
-            tokens,
+            tokenize("not true and false or true"),
             vec![
                 Token::Not,
                 Token::Boolean(true),
@@ -489,11 +478,8 @@ mod tests {
 
     #[test]
     fn ignores_comments_until_newline() {
-        let mut lexer = Lexer::new("def a as integer // ignored\na = 10");
-        let tokens = lexer.tokenize().unwrap();
-
         assert_eq!(
-            tokens,
+            tokenize("def a as integer // ignored\na = 10"),
             vec![
                 Token::Def,
                 Token::Identifier("a".to_string()),
@@ -510,11 +496,8 @@ mod tests {
 
     #[test]
     fn lexes_match_expression() {
-        let mut lexer = Lexer::new("match n (\n  1 => \"one\",\n  _ => \"other\"\n)");
-        let tokens = lexer.tokenize().unwrap();
-
         assert_eq!(
-            tokens,
+            tokenize("match n (\n  1 => \"one\",\n  _ => \"other\"\n)"),
             vec![
                 Token::Match,
                 Token::Identifier("n".to_string()),

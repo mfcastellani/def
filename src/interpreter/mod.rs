@@ -6,7 +6,7 @@ use std::{
 
 use crate::ast::{
     AssignmentOperator, AssignmentTarget, BinaryOperator, EnvVarsLoad, Expression, ForLoop,
-    FunctionDefinition, IfStatement, ImportDefinition, MatchArm, Program, Statement, Type,
+    FunctionDefinition, IfStatement, ImportDefinition, MatchArm, Program, Statement, Stmt, Type,
     VariableDefinition,
 };
 use crate::error::{DefError, DefResult};
@@ -31,8 +31,10 @@ use values::{
     apply_assignment_operator, call_string_method, coerce_assignment, coerce_value_to_type,
     default_value_for_type, evaluate_boolean_binary, evaluate_numeric_binary,
     evaluate_numeric_comparison, evaluate_unary, is_valid_tuple_value, pattern_matches,
-    printable_value, resolve_import_path,
+    printable_value,
 };
+
+pub(crate) use values::resolve_import_path;
 
 type ScopeStack = Vec<HashMap<String, Value>>;
 
@@ -42,6 +44,8 @@ pub struct Interpreter {
     functions: HashMap<String, FunctionDefinition>,
     imports: HashMap<String, Interpreter>,
     base_dir: PathBuf,
+    source_file: String,
+    pub(crate) dry_run: bool,
 }
 
 impl Default for Interpreter {
@@ -51,6 +55,8 @@ impl Default for Interpreter {
             functions: HashMap::new(),
             imports: HashMap::new(),
             base_dir: PathBuf::from("."),
+            source_file: String::new(),
+            dry_run: false,
         }
     }
 }
@@ -68,12 +74,30 @@ impl Interpreter {
         }
     }
 
+    pub fn with_source_file(mut self, file: impl Into<String>) -> Self {
+        self.source_file = file.into();
+        self
+    }
+
+    pub fn with_dry_run(mut self, dry_run: bool) -> Self {
+        self.dry_run = dry_run;
+        self
+    }
+
     pub fn interpret(&mut self, program: &Program) -> DefResult<Value> {
         let mut last_value = Value::Nil;
         let mut scopes = Vec::new();
 
-        for statement in &program.statements {
-            last_value = self.execute_statement(statement, &mut scopes)?;
+        for stmt in &program.statements {
+            last_value = self
+                .execute_statement(&stmt.inner, &mut scopes)
+                .map_err(|e| {
+                    if self.source_file.is_empty() {
+                        e
+                    } else {
+                        e.at_location(stmt.line, &self.source_file)
+                    }
+                })?;
         }
 
         Ok(last_value)
@@ -231,8 +255,8 @@ impl Interpreter {
 
         for item in items {
             scopes.push(HashMap::from([(for_loop.variable.clone(), item)]));
-            for statement in &for_loop.body {
-                last_value = self.execute_statement(statement, scopes)?;
+            for stmt in &for_loop.body {
+                last_value = self.execute_statement(&stmt.inner, scopes)?;
             }
             scopes.pop();
         }
@@ -261,12 +285,12 @@ impl Interpreter {
         self.execute_block(body, scopes)
     }
 
-    fn execute_block(&mut self, body: &[Statement], scopes: &mut ScopeStack) -> DefResult<Value> {
+    fn execute_block(&mut self, body: &[Stmt], scopes: &mut ScopeStack) -> DefResult<Value> {
         scopes.push(HashMap::new());
         let mut last_value = Value::Nil;
 
-        for statement in body {
-            last_value = self.execute_statement(statement, scopes)?;
+        for stmt in body {
+            last_value = self.execute_statement(&stmt.inner, scopes)?;
         }
 
         scopes.pop();
@@ -275,15 +299,20 @@ impl Interpreter {
 
     fn define_import(&mut self, import: &ImportDefinition) -> DefResult<()> {
         let path = resolve_import_path(&self.base_dir, &import.path);
+        let path_str = path.to_string_lossy().into_owned();
         let source = fs::read_to_string(&path).map_err(|error| {
             DefError::Runtime(format!("failed to import '{}': {error}", path.display()))
         })?;
 
         let mut lexer = Lexer::new(&source);
-        let tokens = lexer.tokenize()?;
-        let program = Parser::new(tokens).parse_program()?;
+        let tokens = lexer.tokenize().map_err(|e| e.in_file(&path_str))?;
+        let program = Parser::new(tokens)
+            .parse_program()
+            .map_err(|e| e.in_file(&path_str))?;
         let base_dir = path.parent().unwrap_or(Path::new(".")).to_path_buf();
-        let mut module = Interpreter::with_base_dir(base_dir);
+        let mut module = Interpreter::with_base_dir(base_dir)
+            .with_source_file(path_str)
+            .with_dry_run(self.dry_run);
         module.interpret(&program)?;
 
         self.imports.insert(import.name.clone(), module);
@@ -384,7 +413,7 @@ impl Interpreter {
             }
             Expression::Index { object, index } => self.evaluate_index(object, index, scopes),
             Expression::Match { value, arms } => self.evaluate_match(value, arms, scopes),
-            Expression::Block(statements) => self.execute_block(statements, scopes),
+            Expression::Block(stmts) => self.execute_block(stmts, scopes),
         }
     }
 
@@ -552,6 +581,15 @@ impl Interpreter {
         name: &str,
         args: Vec<Value>,
     ) -> DefResult<Value> {
+        if self.dry_run && name == "do" {
+            return Ok(Value::Response(crate::value::ResponseValue {
+                status: 200,
+                body: String::new(),
+                headers: vec![],
+                duration_ms: 0,
+            }));
+        }
+
         match object {
             Value::RequestHandle(request_name) => {
                 let base_dir = self.base_dir.clone();

@@ -1294,8 +1294,14 @@ fn response_headers_returns_array() {
     assert_eq!(
         value,
         Value::Array(vec![
-            Value::String("content-type: application/json".to_string()),
-            Value::String("x-def-test: hello".to_string()),
+            Value::Tuple {
+                key: "content-type".to_string(),
+                value: Box::new(Value::String("application/json".to_string())),
+            },
+            Value::Tuple {
+                key: "x-def-test".to_string(),
+                value: Box::new(Value::String("hello".to_string())),
+            },
         ])
     );
 }

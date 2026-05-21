@@ -19,4 +19,23 @@ impl fmt::Display for DefError {
 
 impl std::error::Error for DefError {}
 
+impl DefError {
+    pub fn in_file(self, file: &str) -> DefError {
+        match self {
+            DefError::Lex(msg) => DefError::Lex(format!("{msg} in '{file}'")),
+            DefError::Parse(msg) => DefError::Parse(format!("{msg} in '{file}'")),
+            DefError::Runtime(msg) => DefError::Runtime(format!("{msg} in '{file}'")),
+        }
+    }
+
+    pub fn at_location(self, line: usize, file: &str) -> DefError {
+        match self {
+            DefError::Runtime(msg) if !msg.contains(" in '") => {
+                DefError::Runtime(format!("{msg} at line {line} in '{file}'"))
+            }
+            other => other,
+        }
+    }
+}
+
 pub type DefResult<T> = Result<T, DefError>;

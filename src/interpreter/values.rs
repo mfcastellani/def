@@ -171,7 +171,7 @@ pub(super) fn pattern_matches(pattern: &MatchPattern, value: &Value) -> bool {
     }
 }
 
-pub(super) fn resolve_import_path(base_dir: &Path, import_path: &str) -> PathBuf {
+pub(crate) fn resolve_import_path(base_dir: &Path, import_path: &str) -> PathBuf {
     let import_path = Path::new(import_path);
     let mut path = if import_path.is_absolute() {
         import_path.to_path_buf()

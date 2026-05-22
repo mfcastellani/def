@@ -2,6 +2,7 @@ use super::*;
 use crate::lexer::Lexer;
 use crate::parser::Parser;
 use crate::value::ResponseValue;
+use std::fs;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -972,18 +973,14 @@ fn request_with_var_rejects_non_primitive_value() {
 
 #[test]
 fn request_do_fails_on_unresolved_header_template() {
-    let (path, _dir) = write_temp_file(
-        "headers.hdef",
-        "Accept: {{accept}}\n",
-    );
+    let dir = temp_dir();
+    fs::write(dir.join("headers.hdef"), "Accept: {{accept}}\n").unwrap();
     let error = interpret_error(
-        &format!(
-            "def r as request(GET)\n\
-             r.path(\"http://127.0.0.1:1\")\n\
-             r.headers_from(\"{path}\")\n\
-             r.do()"
-        ),
-        ".",
+        "def r as request(GET)\n\
+         r.path(\"http://127.0.0.1:1\")\n\
+         r.headers_from(\"headers.hdef\")\n\
+         r.do()",
+        dir.to_str().unwrap(),
     );
     assert!(
         matches!(&error, DefError::Runtime(msg) if msg.contains("unresolved template variable") && msg.contains("accept")),
@@ -993,19 +990,15 @@ fn request_do_fails_on_unresolved_header_template() {
 
 #[test]
 fn request_do_fails_on_unresolved_body_template() {
-    let (path, _dir) = write_temp_file(
-        "body.jdef",
-        "{\"name\": \"{{username}}\"}\n",
-    );
+    let dir = temp_dir();
+    fs::write(dir.join("body.jdef"), "{\"name\": \"{{username}}\"}\n").unwrap();
     let error = interpret_error(
-        &format!(
-            "def r as request(POST)\n\
-             r.path(\"http://127.0.0.1:1\")\n\
-             r.body_from(\"{path}\")\n\
-             r.type(JSON)\n\
-             r.do()"
-        ),
-        ".",
+        "def r as request(POST)\n\
+         r.path(\"http://127.0.0.1:1\")\n\
+         r.body_from(\"body.jdef\")\n\
+         r.type(JSON)\n\
+         r.do()",
+        dir.to_str().unwrap(),
     );
     assert!(
         matches!(&error, DefError::Runtime(msg) if msg.contains("unresolved template variable") && msg.contains("username")),

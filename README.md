@@ -382,6 +382,7 @@ print("{{res.describe_status()}} in {{res.duration()}}ms")
 | `.exponential_backoff(ms)`     | Wait `ms`, `2×ms`, `4×ms`, … between retries            |
 | `.timeout(ms)`                 | Maximum time per attempt in milliseconds                 |
 | `.timeout(ms, "message")`      | Maximum time per attempt; show `"message"` on failure    |
+| `.inspect()`                   | Print request details to stdout for debugging; returns self |
 | `.do()`                        | Send the request and return a `response`                 |
 
 ### Response methods
@@ -399,6 +400,7 @@ print("{{res.describe_status()}} in {{res.duration()}}ms")
 | `header(name)`          | `string`   | value of a specific header (case-insensitive)     |
 | `headers()`             | `array`    | all headers as `tuple(name, value)` elements      |
 | `expect(predicate)`     | `response` | assert a condition; returns self for chaining     |
+| `inspect()`             | `response` | print response details to stdout for debugging; returns self |
 
 ### Headers
 
@@ -500,19 +502,27 @@ language: {{language}}
 purpose: HTTP testing
 ```
 
-`with_var(variable_name)` registers a string variable for template substitution. It applies to headers, query strings, and body simultaneously. Call order does not matter, all registered variables are applied on every `with_var` call.
+`with_var(variable_name)` registers a variable for template substitution. It applies to headers, query strings, and body simultaneously. Call order does not matter, all registered variables are applied on every `with_var` call.
 
 ### Template variables
 
-The `{{variable}}` substitution system is shared across `.hdef`, `.qdef`, `.jdef`, and `.tdef` files. Only string variables can be registered with `with_var`. For numeric values, declare the variable as a string:
+The `{{variable}}` substitution system is shared across `.hdef`, `.qdef`, `.jdef`, and `.tdef` files. `with_var` accepts `string`, `integer`, `float`, and `boolean` — numeric and boolean values are converted to their string representation automatically:
 
 ```def
-def user_id as string("1")
+def user_id as integer(1)
+def active  as boolean(true)
 
 request(GET)
-  .path(concat(base_url, "/users/", user_id))
+  .path(concat(base_url, "/users"))
   .with_var(user_id)
+  .with_var(active)
   .do()
+```
+
+If a `{{placeholder}}` in a template file has no matching registered variable, `.do()` aborts with a clear error:
+
+```
+runtime error: header 'Authorization' contains unresolved template variable '{{token}}' — register it with with_var(token)
 ```
 
 ### Retry and Backoff
@@ -583,6 +593,52 @@ When a predicate fails, the error includes the predicate text and current respon
 runtime error: expect(status == 201) failed: status=200, ok=true, duration=142ms
 ```
 
+### Debugging — inspect
+
+`inspect()` prints the full request or response to stdout without interrupting the chain. It is useful when a request behaves unexpectedly and you need to see exactly what was sent and received.
+
+**Request** — call `inspect()` before `.do()` to print method, URL, headers, query parameters, body, template variables, retry configuration, and timeout:
+
+```def
+def res as response(
+  request(POST)
+    .path("https://api.example.com/posts")
+    .header(tuple("Authorization", "Bearer token"))
+    .body_from("post.jdef")
+    .with_var(title)
+    .inspect()   // prints everything above, then continues
+    .do()
+)
+```
+
+Output:
+```
+[inspect] POST https://api.example.com/posts
+  headers:
+    Authorization: Bearer token
+  body:
+    {"title": "DefLang post"}
+  vars:
+    title: DefLang post
+```
+
+**Response** — call `inspect()` on a response value to print status, duration, headers, and body:
+
+```def
+res.inspect()
+```
+
+Output:
+```
+[inspect] 201 (ok, 142ms)
+  headers:
+    content-type: application/json
+  body:
+    {"id": 101, "title": "DefLang post"}
+```
+
+Both methods return `self`, so `res.inspect()` can be used as a standalone statement or chained into further method calls.
+
 ### Supported HTTP methods
 
 `GET`, `POST`, `PUT`, `PATCH`, `DELETE`, and any other method string accepted by the server.
@@ -599,6 +655,7 @@ examples/
 ├── query-string/      # .qdef usage
 ├── body/              # .jdef and .tdef usage
 ├── env/               # .edef usage
+├── debugging/         # inspect() for request and response
 └── jsonplaceholder/   # end-to-end workflow against a real API
 ```
 

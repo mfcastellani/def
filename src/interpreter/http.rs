@@ -222,6 +222,56 @@ pub(super) fn apply_request_method(
                 )),
             }
         }
+        "inspect" => {
+            if !args.is_empty() {
+                return Err(DefError::Runtime(format!(
+                    "request.inspect expects 0 arguments, got {}",
+                    args.len()
+                )));
+            }
+            let url = request.path.as_deref().unwrap_or("(not set)");
+            println!("[inspect] {} {url}", request.method);
+            if !request.headers.is_empty() {
+                println!("  headers:");
+                for (k, v) in &request.headers {
+                    println!("    {k}: {v}");
+                }
+            }
+            if !request.query_strings.is_empty() {
+                println!("  query:");
+                for (k, v) in &request.query_strings {
+                    println!("    {k}: {v}");
+                }
+            }
+            if let Some(ref body) = request.body {
+                println!("  body:");
+                for line in body.lines() {
+                    println!("    {line}");
+                }
+            }
+            if !request.vars.is_empty() {
+                println!("  vars:");
+                for (k, v) in &request.vars {
+                    println!("    {k}: {v}");
+                }
+            }
+            if request.retries > 0 {
+                let backoff_str = match &request.backoff {
+                    BackoffStrategy::None => "none".to_string(),
+                    BackoffStrategy::Fixed(ms) => format!("fixed_backoff({ms}ms)"),
+                    BackoffStrategy::Linear(ms) => format!("linear_backoff({ms}ms)"),
+                    BackoffStrategy::Exponential(ms) => format!("exponential_backoff({ms}ms)"),
+                };
+                println!("  retries: {} ({backoff_str})", request.retries);
+            }
+            if let Some(ms) = request.timeout_ms {
+                match &request.timeout_message {
+                    Some(msg) => println!("  timeout: {ms}ms (\"{msg}\")"),
+                    None => println!("  timeout: {ms}ms"),
+                }
+            }
+            Ok(RequestMethodResult::Request)
+        }
         "do" => {
             if !args.is_empty() {
                 return Err(DefError::Runtime(format!(
@@ -549,7 +599,7 @@ fn execute_http_request(request: &mut RequestValue) -> DefResult<Value> {
                 }
                 return Ok(value);
             }
-            Err(DefError::Runtime(msg)) => {
+            Err(DefError::Request(msg)) => {
                 last_error = msg;
                 if attempt + 1 < max_attempts {
                     let delay_ms = backoff_delay(&request.backoff, attempt);
@@ -562,7 +612,7 @@ fn execute_http_request(request: &mut RequestValue) -> DefResult<Value> {
         }
     }
 
-    Err(DefError::Runtime(last_error))
+    Err(DefError::Request(last_error))
 }
 
 fn execute_http_request_once(request: &RequestValue) -> DefResult<Value> {
@@ -595,14 +645,27 @@ fn execute_http_request_once(request: &RequestValue) -> DefResult<Value> {
     };
     let duration_ms = start.elapsed().as_millis() as i64;
 
-    let response = result.map_err(|error| {
-        if matches!(&error, ureq::Error::Transport(_)) {
-            if let Some(ref msg) = request.timeout_message {
-                return DefError::Runtime(msg.clone());
-            }
+    let response = match result {
+        Ok(r) => r,
+        Err(ureq::Error::Status(code, r)) => {
+            let status_text = r.status_text().to_string();
+            let body = r.into_string().unwrap_or_default();
+            let msg = if body.trim().is_empty() {
+                format!("HTTP {code} {status_text}")
+            } else {
+                format!("HTTP {code} {status_text}\n{body}")
+            };
+            return Err(DefError::Request(msg));
         }
-        DefError::Runtime(format!("request failed: {error}"))
-    })?;
+        Err(ureq::Error::Transport(transport)) => {
+            let msg = if let Some(ref custom) = request.timeout_message {
+                custom.clone()
+            } else {
+                format!("request failed: {transport}")
+            };
+            return Err(DefError::Request(msg));
+        }
+    };
 
     let status = i64::from(response.status());
     let headers = response
@@ -617,7 +680,7 @@ fn execute_http_request_once(request: &RequestValue) -> DefResult<Value> {
 
     let body = response
         .into_string()
-        .map_err(|error| DefError::Runtime(format!("failed to read response body: {error}")))?;
+        .map_err(|error| DefError::Request(format!("failed to read response body: {error}")))?;
 
     Ok(Value::Response(ResponseValue {
         status,
@@ -830,6 +893,36 @@ pub(super) fn call_response_method(
             };
 
             Ok(Value::String(label.to_string()))
+        }
+        "inspect" => {
+            if !args.is_empty() {
+                return Err(DefError::Runtime(format!(
+                    "response.inspect expects 0 arguments, got {}",
+                    args.len()
+                )));
+            }
+            let ok_label = if response.status >= 200 && response.status < 300 {
+                "ok"
+            } else {
+                "error"
+            };
+            println!(
+                "[inspect] {} ({ok_label}, {}ms)",
+                response.status, response.duration_ms
+            );
+            if !response.headers.is_empty() {
+                println!("  headers:");
+                for (k, v) in &response.headers {
+                    println!("    {k}: {v}");
+                }
+            }
+            if !response.body.is_empty() {
+                println!("  body:");
+                for line in response.body.lines() {
+                    println!("    {line}");
+                }
+            }
+            Ok(Value::Response(response))
         }
         _ => Err(DefError::Runtime(format!(
             "unknown response method '{name}'"

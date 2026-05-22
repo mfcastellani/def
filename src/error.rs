@@ -5,6 +5,7 @@ pub enum DefError {
     Lex(String),
     Parse(String),
     Runtime(String),
+    Request(String),
 }
 
 impl fmt::Display for DefError {
@@ -13,6 +14,7 @@ impl fmt::Display for DefError {
             DefError::Lex(message) => write!(f, "lexer error: {message}"),
             DefError::Parse(message) => write!(f, "parser error: {message}"),
             DefError::Runtime(message) => write!(f, "runtime error: {message}"),
+            DefError::Request(message) => write!(f, "request error: {message}"),
         }
     }
 }
@@ -25,6 +27,7 @@ impl DefError {
             DefError::Lex(msg) => DefError::Lex(format!("{msg} in '{file}'")),
             DefError::Parse(msg) => DefError::Parse(format!("{msg} in '{file}'")),
             DefError::Runtime(msg) => DefError::Runtime(format!("{msg} in '{file}'")),
+            DefError::Request(msg) => DefError::Request(format!("{msg} in '{file}'")),
         }
     }
 

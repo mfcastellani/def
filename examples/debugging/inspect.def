@@ -1,0 +1,23 @@
+// Debugging with inspect()
+// request.inspect() prints the full request before it is sent.
+// response.inspect() prints the full response after it arrives.
+// Both return themselves, so they can be placed inline in a chain.
+
+def page as integer(1)
+
+def res as response(
+  request(GET)
+    .path("https://jsonplaceholder.typicode.com/posts")
+    .header(tuple("Accept", "application/json"))
+    .query_string(tuple("_page", "1"))
+    .query_string(tuple("_limit", "2"))
+    .with_var(page)
+    .inspect()
+    .do()
+)
+
+res.inspect()
+
+assert(res.ok())
+assert(res.status() == 200)
+print("all assertions passed")

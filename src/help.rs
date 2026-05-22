@@ -40,6 +40,7 @@ pub fn print_help() {
     text("  delay          Pause execution for a given number of milliseconds");
     text("  envvars        Load environment variable defaults from .edef files");
     text("  expect         Assert response conditions with readable error messages");
+    text("  inspect        Print request and response details for debugging");
     text("  float          Floating-point numbers and arithmetic operators");
     text("  function       Define and call named user functions");
     text("  headers        Request headers inline or from .hdef template files");
@@ -74,6 +75,7 @@ pub fn print_topic(topic: &str) {
         "delay" => print_delay(),
         "envvars" => print_envvars(),
         "expect" => print_expect(),
+        "inspect" => print_inspect(),
         "float" => print_float(),
         "function" => print_function(),
         "headers" | "hdef" => print_headers(),
@@ -249,7 +251,7 @@ fn print_body() {
     text("    .path(url)");
     text("    .body_from(\"path/to/file.jdef\")");
     text("    .type(JSON)              // sets Content-Type: application/json");
-    text("    .with_var(variable)      // registers a string variable for substitution");
+    text("    .with_var(variable)      // registers a variable for substitution (string, integer, float, boolean)");
     text("    .do()");
     println!();
     text("  Use .type(TEXT) with .tdef files.");
@@ -508,7 +510,8 @@ fn print_headers() {
     text("  the file value for that specific header.");
     section(".HDEF FORMAT");
     text("  One 'Name: value' per line. // and # lines are comments.");
-    text("  {{variable}} placeholders are substituted via with_var().");
+    text("  {{variable}} placeholders are substituted via with_var(). Unresolved");
+    text("  placeholders cause .do() to abort with a clear error.");
     println!();
     text("  // common request headers");
     text("  Authorization: Bearer {{token}}");
@@ -674,7 +677,8 @@ fn print_query_string() {
     text("  the last value wins.");
     section(".QDEF FORMAT");
     text("  One 'name: value' per line. // and # lines are comments.");
-    text("  {{variable}} placeholders are substituted via with_var().");
+    text("  {{variable}} placeholders are substituted via with_var(). Unresolved");
+    text("  placeholders cause .do() to abort with a clear error.");
     println!();
     text("  // search parameters");
     text("  search: {{search_term}}");
@@ -725,7 +729,10 @@ fn print_request() {
     text("  .body_from(path)                 Load body from a .jdef or .tdef file");
     text("  .type(JSON)                      Set Content-Type: application/json");
     text("  .type(TEXT)                      Set Content-Type: text/plain");
-    text("  .with_var(variable)              Register a string for template substitution");
+    text("  .with_var(variable)              Register a variable for template substitution");
+    text("                                   Accepts string, integer, float, or boolean.");
+    text("                                   Unresolved {{placeholders}} abort at .do().");
+    text("  .inspect()                       Print request details to stdout; returns self");
     text("  .retries(n)                      Retry up to n times on failure");
     text("  .fixed_backoff(ms)               Wait ms between retries (constant)");
     text("  .linear_backoff(ms)              Wait ms, 2×ms, 3×ms, ... between retries");
@@ -780,6 +787,7 @@ fn print_response() {
     text("  header(name)          Value of a specific header (case-insensitive)");
     text("  headers()             All headers as an array of tuple(name, value)");
     text("  expect(predicate)     Assert a condition; aborts with a readable error if false");
+    text("  inspect()             Print response details to stdout; returns self");
     section("EXAMPLE");
     text("  def res as response(");
     text("    request(GET)");
@@ -929,6 +937,66 @@ fn print_expect() {
     section("SEE ALSO");
     text("  def help assert    Global assert() builtin");
     text("  def help response  Full list of response methods");
+}
+
+fn print_inspect() {
+    text("INSPECT");
+    section("DESCRIPTION");
+    text("  inspect() prints the full details of a request or response to stdout.");
+    text("  Both methods return self, so they can be placed inline without breaking");
+    text("  a chain. Use them to debug unexpected behaviour without adding extra");
+    text("  variables or print statements.");
+    section("REQUEST — call before .do()");
+    text("  request.inspect() prints:");
+    text("    method and URL, headers, query parameters, body, template vars,");
+    text("    retry count and backoff strategy, timeout.");
+    println!();
+    text("  request(POST)");
+    text("    .path(url)");
+    text("    .header(tuple(\"Authorization\", \"Bearer token\"))");
+    text("    .body_from(\"post.jdef\")");
+    text("    .with_var(title)");
+    text("    .inspect()   // <-- here, before .do()");
+    text("    .do()");
+    println!();
+    text("  Output:");
+    text("    [inspect] POST https://api.example.com/posts");
+    text("      headers:");
+    text("        Authorization: Bearer token");
+    text("      body:");
+    text("        {\"title\": \"DefLang post\"}");
+    text("      vars:");
+    text("        title: DefLang post");
+    section("RESPONSE — call on a response value");
+    text("  response.inspect() prints:");
+    text("    status code, ok/error label, duration, headers, body.");
+    println!();
+    text("  res.inspect()");
+    println!();
+    text("  Output:");
+    text("    [inspect] 201 (ok, 142ms)");
+    text("      headers:");
+    text("        content-type: application/json");
+    text("      body:");
+    text("        {\"id\": 101}");
+    println!();
+    text("  Because inspect() returns the response, it can be chained:");
+    text("  res.inspect().expect(ok).expect(status == 201)");
+    section("EXAMPLE");
+    text("  def res as response(");
+    text("    request(GET)");
+    text("      .path(\"https://jsonplaceholder.typicode.com/posts/1\")");
+    text("      .inspect()");
+    text("      .do()");
+    text("  )");
+    println!();
+    text("  res.inspect()");
+    println!();
+    text("  assert(res.ok())");
+    section("SEE ALSO");
+    text("  def help request   Full list of request builder methods");
+    text("  def help response  Full list of response methods");
+    text("  def help expect    Assert response conditions with readable error messages");
 }
 
 fn print_tuple() {

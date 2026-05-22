@@ -1,0 +1,3 @@
+// text body for request example
+language: {{language}}
+purpose: HTTP testing

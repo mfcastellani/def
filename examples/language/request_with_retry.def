@@ -1,0 +1,22 @@
+def language as string("Def")
+
+def res as response(
+  request(POST)
+    .path("https://httpbingo.org/anything")
+    .body_from("tdef/body.tdef")
+    .type(TEXT)
+    .retries(3)
+    .linear_backoff(100)
+    .timeout(2000, "httpbingo timeout")
+    .with_var(language)
+    .do()
+)
+
+def search as string("language")
+print("status:        {{res.status()}}")
+print("ok:            {{res.ok()}}")
+print("duration:      {{res.duration()}}ms")
+print("size:          {{res.size()}} bytes")
+print("content-type:  {{res.content_type()}}")
+print("body contains '{{search}}': {{res.body_contains(search)}}")
+print("body:          {{res.body()}}")

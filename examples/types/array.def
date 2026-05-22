@@ -26,7 +26,7 @@ def count_items as function(items as array) (
   items.len()
 )
 
-if names.is_empty() == false (
+if names.is_empty() (
   print("array is empty")
 ) else (
   print("array is not empty")

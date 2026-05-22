@@ -8,4 +8,8 @@ message = match status (
   _ => "unexpected"
 )
 
+print("status:  {{status}}")
+print("message: {{message}}")
+
 assert(message == "ok")
+print("all assertions passed")

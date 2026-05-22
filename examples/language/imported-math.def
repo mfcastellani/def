@@ -2,6 +2,14 @@ def math as imported("imports/math")
 
 math.variable = "Marcelo"
 
+print("add(10, 12)      = {{math.add(10, 12)}}")
+print("subtract(12, 10) = {{math.subtract(12, 10)}}")
+print("divide(12, 3)    = {{math.divide(12, 3)}}")
+print("multiply(10, 12) = {{math.multiply(10, 12)}}")
+print("is_even(12)      = {{math.is_even(12)}}")
+print("parity(13)       = {{math.parity(13)}}")
+print("variable         = {{math.variable}}")
+
 assert(math.add(10, 12) == 22)
 assert(math.subtract(12, 10) == 2)
 assert(math.divide(12, 3) == 4.0)
@@ -9,3 +17,4 @@ assert(math.multiply(10, 12) == 120)
 assert(math.is_even(12) == true)
 assert(math.parity(13) == "odd")
 assert(math.variable == "Marcelo")
+print("all assertions passed")

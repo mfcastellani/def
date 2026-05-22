@@ -18,6 +18,15 @@ pub enum Value {
     Nil,
 }
 
+#[derive(Debug, Clone, PartialEq, Default)]
+pub enum BackoffStrategy {
+    #[default]
+    None,
+    Fixed(u64),
+    Linear(u64),
+    Exponential(u64),
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct RequestValue {
     pub method: String,
@@ -27,6 +36,10 @@ pub struct RequestValue {
     pub query_strings: Vec<(String, String)>,
     pub body: Option<String>,
     pub vars: Vec<(String, String)>,
+    pub retries: u32,
+    pub backoff: BackoffStrategy,
+    pub timeout_ms: Option<u64>,
+    pub timeout_message: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq)]

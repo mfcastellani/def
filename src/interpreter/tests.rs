@@ -224,8 +224,9 @@ fn evaluates_numeric_comparison_expressions() {
 #[test]
 fn evaluates_boolean_operator_expressions() {
     let value = run("assert(true and true)\n\
-             assert(false and false)\n\
+             assert((false and false) == false)\n\
              assert((true and false) == false)\n\
+             assert((false and true) == false)\n\
              assert(true or false)\n\
              assert(false or true)\n\
              assert((false or false) == false)");
@@ -942,16 +943,73 @@ fn request_headers_from_interpolates_with_var_called_before_file_load() {
 }
 
 #[test]
-fn request_with_var_requires_string_value() {
+fn request_with_var_accepts_primitive_types() {
+    // integers, floats, and booleans are all valid; they are coerced to string
+    run(
+        "def r as request(GET)\n\
+             def page as integer(2)\n\
+             def limit as float(10.5)\n\
+             def active as boolean(true)\n\
+             r.with_var(page)\n\
+             r.with_var(limit)\n\
+             r.with_var(active)",
+    );
+}
+
+#[test]
+fn request_with_var_rejects_non_primitive_value() {
     let error = interpret_error(
-        "def accept_header as integer(10)\n\
+        "def items as array\n\
              def r as request(GET)\n\
-             r.with_var(accept_header)",
+             r.with_var(items)",
         ".",
     );
 
     assert!(
-        matches!(error, DefError::Runtime(message) if message.contains("variable value must be a string"))
+        matches!(error, DefError::Runtime(message) if message.contains("must be a string, integer, float, or boolean"))
+    );
+}
+
+#[test]
+fn request_do_fails_on_unresolved_header_template() {
+    let (path, _dir) = write_temp_file(
+        "headers.hdef",
+        "Accept: {{accept}}\n",
+    );
+    let error = interpret_error(
+        &format!(
+            "def r as request(GET)\n\
+             r.path(\"http://127.0.0.1:1\")\n\
+             r.headers_from(\"{path}\")\n\
+             r.do()"
+        ),
+        ".",
+    );
+    assert!(
+        matches!(&error, DefError::Runtime(msg) if msg.contains("unresolved template variable") && msg.contains("accept")),
+        "unexpected error: {error:?}"
+    );
+}
+
+#[test]
+fn request_do_fails_on_unresolved_body_template() {
+    let (path, _dir) = write_temp_file(
+        "body.jdef",
+        "{\"name\": \"{{username}}\"}\n",
+    );
+    let error = interpret_error(
+        &format!(
+            "def r as request(POST)\n\
+             r.path(\"http://127.0.0.1:1\")\n\
+             r.body_from(\"{path}\")\n\
+             r.type(JSON)\n\
+             r.do()"
+        ),
+        ".",
+    );
+    assert!(
+        matches!(&error, DefError::Runtime(msg) if msg.contains("unresolved template variable") && msg.contains("username")),
+        "unexpected error: {error:?}"
     );
 }
 

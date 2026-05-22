@@ -7,8 +7,12 @@ if status == 200 (
   message = "unexpected"
 )
 
+print("status:  {{status}}")
+print("message: {{message}}")
+
 if not false (
   print("not condition")
 )
 
 assert(message == "ok")
+print("all assertions passed")

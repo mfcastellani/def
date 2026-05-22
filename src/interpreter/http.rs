@@ -1,10 +1,12 @@
 use std::{
     fs,
     path::{Path, PathBuf},
+    thread,
+    time::Duration,
 };
 
 use crate::error::{DefError, DefResult};
-use crate::value::{RequestValue, ResponseValue, Value};
+use crate::value::{BackoffStrategy, RequestValue, ResponseValue, Value};
 
 pub(super) fn new_request_value(method: &str) -> Value {
     Value::Request(RequestValue {
@@ -15,6 +17,10 @@ pub(super) fn new_request_value(method: &str) -> Value {
         query_strings: Vec::new(),
         body: None,
         vars: Vec::new(),
+        retries: 0,
+        backoff: BackoffStrategy::None,
+        timeout_ms: None,
+        timeout_message: None,
     })
 }
 
@@ -152,6 +158,70 @@ pub(super) fn apply_request_method(
             apply_request_vars_to_body(&mut request.body, &request.vars);
             Ok(RequestMethodResult::Request)
         }
+        "retries" => {
+            if args.len() != 1 {
+                return Err(DefError::Runtime(format!(
+                    "request.retries expects 1 argument, got {}",
+                    args.len()
+                )));
+            }
+
+            let Value::Integer(times) = args[0] else {
+                return Err(DefError::Runtime(
+                    "request.retries expects a non-negative integer".to_string(),
+                ));
+            };
+
+            if times < 0 {
+                return Err(DefError::Runtime(
+                    "request.retries expects a non-negative integer".to_string(),
+                ));
+            }
+
+            request.retries = times as u32;
+            Ok(RequestMethodResult::Request)
+        }
+        "fixed_backoff" => {
+            let ms = parse_backoff_ms("fixed_backoff", &args)?;
+            request.backoff = BackoffStrategy::Fixed(ms);
+            Ok(RequestMethodResult::Request)
+        }
+        "linear_backoff" => {
+            let ms = parse_backoff_ms("linear_backoff", &args)?;
+            request.backoff = BackoffStrategy::Linear(ms);
+            Ok(RequestMethodResult::Request)
+        }
+        "exponential_backoff" => {
+            let ms = parse_backoff_ms("exponential_backoff", &args)?;
+            request.backoff = BackoffStrategy::Exponential(ms);
+            Ok(RequestMethodResult::Request)
+        }
+        "timeout" => {
+            match args.as_slice() {
+                [Value::Integer(ms), Value::String(message)] => {
+                    if *ms < 0 {
+                        return Err(DefError::Runtime(
+                            "request.timeout expects a non-negative integer".to_string(),
+                        ));
+                    }
+                    request.timeout_ms = Some(*ms as u64);
+                    request.timeout_message = Some(message.clone());
+                    Ok(RequestMethodResult::Request)
+                }
+                [Value::Integer(ms)] => {
+                    if *ms < 0 {
+                        return Err(DefError::Runtime(
+                            "request.timeout expects a non-negative integer".to_string(),
+                        ));
+                    }
+                    request.timeout_ms = Some(*ms as u64);
+                    Ok(RequestMethodResult::Request)
+                }
+                _ => Err(DefError::Runtime(
+                    "request.timeout expects timeout(ms) or timeout(ms, \"message\")".to_string(),
+                )),
+            }
+        }
         "do" => {
             if !args.is_empty() {
                 return Err(DefError::Runtime(format!(
@@ -263,18 +333,25 @@ fn request_query_string_from_args(args: Vec<Value>) -> DefResult<(String, String
 fn request_var_from_args(args: Vec<Value>) -> DefResult<(String, String)> {
     match args.as_slice() {
         [Value::Tuple { key, value }] => {
-            let Value::String(value) = value.as_ref() else {
-                return Err(DefError::Runtime(
-                    "request.with_var variable value must be a string".to_string(),
-                ));
-            };
-
-            Ok((key.clone(), value.clone()))
+            let string_value = primitive_to_string(value.as_ref())?;
+            Ok((key.clone(), string_value))
         }
         _ => Err(DefError::Runtime(format!(
             "request.with_var expects 1 variable identifier, got {}",
             args.len()
         ))),
+    }
+}
+
+fn primitive_to_string(value: &Value) -> DefResult<String> {
+    match value {
+        Value::String(s) => Ok(s.clone()),
+        Value::Integer(n) => Ok(n.to_string()),
+        Value::Float(f) => Ok(f.to_string()),
+        Value::Boolean(b) => Ok(b.to_string()),
+        _ => Err(DefError::Runtime(
+            "request.with_var variable must be a string, integer, float, or boolean".to_string(),
+        )),
     }
 }
 
@@ -318,6 +395,42 @@ fn render_template(value: &str, vars: &[(String, String)]) -> String {
         rendered = rendered.replace(&format!("{{{{{name}}}}}"), replacement);
     }
     rendered
+}
+
+fn find_unresolved(text: &str) -> Option<String> {
+    let open = text.find("{{")?;
+    let rest = &text[open + 2..];
+    let placeholder = if let Some(close) = rest.find("}}") {
+        rest[..close].trim().to_string()
+    } else {
+        rest.to_string()
+    };
+    Some(placeholder)
+}
+
+fn check_unresolved_vars(request: &RequestValue) -> DefResult<()> {
+    for (header_name, value) in &request.headers {
+        if let Some(placeholder) = find_unresolved(value) {
+            return Err(DefError::Runtime(format!(
+                "header '{header_name}' contains unresolved template variable '{{{{{placeholder}}}}}' — register it with with_var({placeholder})"
+            )));
+        }
+    }
+    for (param_name, value) in &request.query_strings {
+        if let Some(placeholder) = find_unresolved(value) {
+            return Err(DefError::Runtime(format!(
+                "query string '{param_name}' contains unresolved template variable '{{{{{placeholder}}}}}' — register it with with_var({placeholder})"
+            )));
+        }
+    }
+    if let Some(body) = &request.body {
+        if let Some(placeholder) = find_unresolved(body) {
+            return Err(DefError::Runtime(format!(
+                "request body contains unresolved template variable '{{{{{placeholder}}}}}' — register it with with_var({placeholder})"
+            )));
+        }
+    }
+    Ok(())
 }
 
 fn read_headers_file(base_dir: &Path, header_path: &str) -> DefResult<Vec<(String, String)>> {
@@ -425,13 +538,49 @@ fn resolve_path(base_dir: &Path, path: &str) -> PathBuf {
 }
 
 fn execute_http_request(request: &mut RequestValue) -> DefResult<Value> {
+    let max_attempts = request.retries as usize + 1;
+    let mut last_error = String::new();
+
+    for attempt in 0..max_attempts {
+        match execute_http_request_once(request) {
+            Ok(value) => {
+                if let Value::Response(ref r) = value {
+                    request.status = Some(r.status);
+                }
+                return Ok(value);
+            }
+            Err(DefError::Runtime(msg)) => {
+                last_error = msg;
+                if attempt + 1 < max_attempts {
+                    let delay_ms = backoff_delay(&request.backoff, attempt);
+                    if delay_ms > 0 {
+                        thread::sleep(Duration::from_millis(delay_ms));
+                    }
+                }
+            }
+            Err(e) => return Err(e),
+        }
+    }
+
+    Err(DefError::Runtime(last_error))
+}
+
+fn execute_http_request_once(request: &RequestValue) -> DefResult<Value> {
+    check_unresolved_vars(request)?;
+
     let path = request
         .path
         .as_ref()
         .ok_or_else(|| DefError::Runtime("request.path must be set before request.do".to_string()))?
         .clone();
 
-    let mut http_request = ureq::request(&request.method, &path);
+    let mut agent_builder = ureq::AgentBuilder::new();
+    if let Some(ms) = request.timeout_ms {
+        agent_builder = agent_builder.timeout(Duration::from_millis(ms));
+    }
+    let agent = agent_builder.build();
+
+    let mut http_request = agent.request(&request.method, &path);
     for (name, value) in &request.query_strings {
         http_request = http_request.query(name, value);
     }
@@ -440,15 +589,22 @@ fn execute_http_request(request: &mut RequestValue) -> DefResult<Value> {
     }
 
     let start = std::time::Instant::now();
-    let response = match &request.body {
+    let result = match &request.body {
         Some(body) => http_request.send_string(body),
         None => http_request.call(),
-    }
-    .map_err(|error| DefError::Runtime(format!("request failed: {error}")))?;
+    };
     let duration_ms = start.elapsed().as_millis() as i64;
 
+    let response = result.map_err(|error| {
+        if matches!(&error, ureq::Error::Transport(_)) {
+            if let Some(ref msg) = request.timeout_message {
+                return DefError::Runtime(msg.clone());
+            }
+        }
+        DefError::Runtime(format!("request failed: {error}"))
+    })?;
+
     let status = i64::from(response.status());
-    request.status = Some(status);
     let headers = response
         .headers_names()
         .into_iter()
@@ -469,6 +625,35 @@ fn execute_http_request(request: &mut RequestValue) -> DefResult<Value> {
         headers,
         duration_ms,
     }))
+}
+
+fn backoff_delay(strategy: &BackoffStrategy, attempt: usize) -> u64 {
+    match strategy {
+        BackoffStrategy::None => 0,
+        BackoffStrategy::Fixed(ms) => *ms,
+        BackoffStrategy::Linear(ms) => *ms * (attempt as u64 + 1),
+        BackoffStrategy::Exponential(ms) => *ms * (1u64 << attempt),
+    }
+}
+
+fn parse_backoff_ms(method: &str, args: &[Value]) -> DefResult<u64> {
+    if args.len() != 1 {
+        return Err(DefError::Runtime(format!(
+            "request.{method} expects 1 argument, got {}",
+            args.len()
+        )));
+    }
+    let Value::Integer(ms) = args[0] else {
+        return Err(DefError::Runtime(format!(
+            "request.{method} expects a non-negative integer in milliseconds"
+        )));
+    };
+    if ms < 0 {
+        return Err(DefError::Runtime(format!(
+            "request.{method} expects a non-negative integer in milliseconds"
+        )));
+    }
+    Ok(ms as u64)
 }
 
 pub(super) fn call_response_method(

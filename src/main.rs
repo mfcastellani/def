@@ -6,35 +6,74 @@ mod lexer;
 mod parser;
 mod value;
 
-use std::{env, fs, path::Path, process};
+use std::{fs, path::Path, process};
 
+use clap::{Parser, Subcommand};
 use error::{DefError, DefResult};
 use interpreter::Interpreter;
 use lexer::Lexer;
-use parser::Parser;
+use parser::Parser as DefParser;
+
+#[derive(Parser)]
+#[command(
+    name = "def",
+    about = "DefLang — a scripting language for HTTP workflows",
+    version,
+    disable_help_subcommand = true
+)]
+struct Cli {
+    #[command(subcommand)]
+    command: Command,
+}
+
+#[derive(Subcommand)]
+enum Command {
+    /// Run a .def script
+    Run {
+        /// Path to the .def file to execute
+        file: String,
+    },
+    /// Validate a .def script without making HTTP calls (dry-run)
+    Check {
+        /// Path to the .def file to validate
+        file: String,
+    },
+    /// Format a .def script (not yet implemented)
+    Fmt {
+        /// Path to the .def file to format
+        file: String,
+    },
+    /// Show DefLang language help and topic list
+    Help {
+        /// Topic to show details for (omit to list all topics)
+        topic: Option<String>,
+    },
+}
 
 fn main() {
-    let args: Vec<String> = env::args().collect();
+    let cli = Cli::parse();
 
-    match args.get(1).map(String::as_str) {
-        None => {
-            help::print_usage();
-        }
-        Some("--version") => {
-            help::print_version();
-        }
-        Some("--help") => match args.get(2).map(String::as_str) {
-            None => help::print_help(),
-            Some(topic) => help::print_topic(topic),
-        },
-        Some(path) => {
-            let check_mode = args.get(2).map(String::as_str) == Some("--check");
-            let result = if check_mode { check(path) } else { run(path) };
-            if let Err(error) = result {
+    match cli.command {
+        Command::Run { file } => {
+            if let Err(error) = run(&file) {
                 eprintln!("{error}");
                 process::exit(1);
             }
         }
+        Command::Check { file } => {
+            if let Err(error) = check(&file) {
+                eprintln!("{error}");
+                process::exit(1);
+            }
+        }
+        Command::Fmt { file } => {
+            eprintln!("fmt: not yet implemented (file: {file})");
+            process::exit(1);
+        }
+        Command::Help { topic } => match topic {
+            None => help::print_help(),
+            Some(topic) => help::print_topic(&topic),
+        },
     }
 }
 
@@ -44,15 +83,14 @@ fn run(path: &str) -> DefResult<()> {
 
     let mut lexer = Lexer::new(&source);
     let tokens = lexer.tokenize().map_err(|e| e.in_file(path))?;
-    let program = Parser::new(tokens)
+    let program = DefParser::new(tokens)
         .parse_program()
         .map_err(|e| e.in_file(path))?;
     let base_dir = Path::new(path).parent().unwrap_or(Path::new("."));
-    let value = Interpreter::with_base_dir(base_dir)
+    Interpreter::with_base_dir(base_dir)
         .with_source_file(path)
         .interpret(&program)?;
 
-    println!("{value:?}");
     Ok(())
 }
 
@@ -62,7 +100,7 @@ fn check(path: &str) -> DefResult<()> {
 
     let mut lexer = Lexer::new(&source);
     let tokens = lexer.tokenize().map_err(|e| e.in_file(path))?;
-    let program = Parser::new(tokens)
+    let program = DefParser::new(tokens)
         .parse_program()
         .map_err(|e| e.in_file(path))?;
     let base_dir = Path::new(path).parent().unwrap_or(Path::new("."));

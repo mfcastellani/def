@@ -4,4 +4,7 @@ def sum as function(a as integer, b as integer) (
 
 def n as integer(sum(10, 12))
 
+print("sum(10, 12) = {{n}}")
+
 assert(n == 22)
+print("all assertions passed")

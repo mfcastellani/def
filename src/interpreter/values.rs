@@ -217,7 +217,7 @@ pub(super) fn evaluate_boolean_binary(
     };
 
     let result = match operator {
-        BinaryOperator::And => left == right,
+        BinaryOperator::And => left && right,
         BinaryOperator::Or => left || right,
         _ => unreachable!("expected boolean operator"),
     };

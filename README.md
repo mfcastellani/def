@@ -23,16 +23,16 @@ Install from [crates.io](https://crates.io/crates/deflang):
 cargo install deflang
 ```
 
-This installs the `def` binary. Then run any `.def` file:
+This installs the `def` binary. Use the `run` subcommand to execute any `.def` file:
 
 ```bash
-def examples/types/integer.def
+def run examples/types/integer.def
 ```
 
 Or run directly from a clone of the repository:
 
 ```bash
-cargo run -- examples/types/integer.def
+cargo run -- run examples/types/integer.def
 ```
 
 Run all examples (requires network for the HTTP ones):
@@ -49,17 +49,33 @@ Run the test suite:
 cargo test
 ```
 
+## CLI
+
+```
+Usage: def <command> [file]
+
+Commands:
+  run   <file>   Execute a .def script
+  check <file>   Validate without executing HTTP calls (dry-run)
+  fmt   <file>   Format a .def script (not yet implemented)
+  help  [topic]  Show language help topics
+
+Options:
+  --version   Print the version number
+  --help      Show this help message
+```
+
 ## Dry-run / Syntax Check
 
-Add `--check` after the file path to run the script in dry-run mode: the full interpreter executes, but HTTP calls return a stub `200` response instead of hitting the network. `print()` and `delay()` are suppressed. Imports are loaded and validated recursively.
+Use `def check` to run the script in dry-run mode: the full interpreter executes, but HTTP calls return a stub `200` response instead of hitting the network. `print()` and `delay()` are suppressed. Imports are loaded and validated recursively.
 
 This catches syntax errors, undefined variables, unknown methods, wrong argument counts, and type errors — everything except assertions on HTTP response values.
 
 ```bash
-def workflow.def --check
+def check workflow.def
 # workflow.def: syntax ok
 
-def broken.def --check
+def check broken.def
 # runtime error: unknown request method 'retry' at line 5 in 'broken.def'
 ```
 
@@ -163,7 +179,7 @@ Comparison operators:
 
 Boolean operators:
 
-- `and` true when both operands are equal (`true and true`, or `false and false`).
+- `and` true when both operands are true.
 - `or` true when at least one operand is true.
 - `not` negates a boolean.
 
@@ -348,6 +364,26 @@ assert(res.ok())
 print("{{res.describe_status()}} in {{res.duration()}}ms")
 ```
 
+### Builder methods
+
+| Method                         | Description                                              |
+|--------------------------------|----------------------------------------------------------|
+| `.path(url)`                   | Set the request URL                                      |
+| `.header(tuple(name, value))`  | Add or replace a request header                          |
+| `.headers_from(path)`          | Load headers from a `.hdef` file                         |
+| `.query_string(tuple(k, v))`   | Append a query parameter                                 |
+| `.query_string_from(path)`     | Load query params from a `.qdef` file                    |
+| `.body_from(path)`             | Load body from a `.jdef` or `.tdef` file                 |
+| `.type(JSON\|TEXT)`            | Set `Content-Type` header (`application/json` or `text/plain`) |
+| `.with_var(variable)`          | Register a string variable for template substitution     |
+| `.retries(n)`                  | Retry the request up to `n` times on failure             |
+| `.fixed_backoff(ms)`           | Wait `ms` milliseconds between retries (constant)        |
+| `.linear_backoff(ms)`          | Wait `ms`, `2×ms`, `3×ms`, … between retries            |
+| `.exponential_backoff(ms)`     | Wait `ms`, `2×ms`, `4×ms`, … between retries            |
+| `.timeout(ms)`                 | Maximum time per attempt in milliseconds                 |
+| `.timeout(ms, "message")`      | Maximum time per attempt; show `"message"` on failure    |
+| `.do()`                        | Send the request and return a `response`                 |
+
 ### Response methods
 
 | Method                  | Returns    | Description                                       |
@@ -479,6 +515,44 @@ request(GET)
   .do()
 ```
 
+### Retry and Backoff
+
+`retries(n)` re-sends the request up to `n` additional times when it fails (network error or HTTP error status). The backoff strategy controls how long to wait between attempts:
+
+```def
+def res as response(
+  request(GET)
+    .path("https://api.example.com/data")
+    .retries(3)
+    .exponential_backoff(100)
+    .timeout(2000, "service did not respond within 2 seconds")
+    .do()
+)
+
+assert(res.ok())
+```
+
+Backoff strategies (the argument is the base delay in milliseconds):
+
+| Method                    | Delay after attempt 1 | Attempt 2 | Attempt 3 |
+|---------------------------|-----------------------|-----------|-----------|
+| `fixed_backoff(100)`      | 100ms                 | 100ms     | 100ms     |
+| `linear_backoff(100)`     | 100ms                 | 200ms     | 300ms     |
+| `exponential_backoff(100)`| 100ms                 | 200ms     | 400ms     |
+
+If more than one backoff strategy is set, only the last one takes effect.
+
+`timeout(ms)` sets the maximum time allowed for each individual attempt. `timeout(ms, "message")` additionally replaces network-level error messages with the given string, useful for user-facing workflows:
+
+```def
+request(GET)
+  .path("https://api.example.com/health")
+  .retries(2)
+  .fixed_backoff(500)
+  .timeout(1000, "health check timed out")
+  .do()
+```
+
 ### Expect
 
 `expect(predicate)` is a readable alternative to `assert` for response validation. It evaluates the predicate against a set of named response fields and aborts with a descriptive error if it is false. It returns the response, so calls can be chained:
@@ -538,6 +612,7 @@ The language core is complete and stable:
 - All primitive types: `integer`, `float`, `string`, `boolean`, `array`, `tuple`, `datetime`
 - Functions, imports, block scope, `if`/`else`, `for`, `match`
 - Full HTTP client with request building, response inspection, and file-based templates
+- Native retry with `retries(n)`, configurable backoff (`fixed`, `linear`, `exponential`), and per-attempt `timeout`
 - String interpolation in `print`
 - Environment variable loading from `.edef` files with system env precedence
 - Error messages include line number and file name

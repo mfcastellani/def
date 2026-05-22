@@ -15,27 +15,20 @@ fn section(title: &str) {
 
 // ── public API ────────────────────────────────────────────────────────────────
 
-pub fn print_version() {
-    println!("def {VERSION}");
-}
-
-pub fn print_usage() {
-    text("Usage: def <file.def> [--check]");
-    println!();
-    text("Options:");
-    text("  --version        Print the version number");
-    text("  --help           List all available help topics");
-    text("  --help <topic>   Show detailed help for a topic");
-    text("  --check          Validate syntax without executing (dry-run)");
-    println!();
-    text("Run 'def --help' for a full list of topics.");
-    text("Run 'def --help about' for information about DefLang.");
-}
-
 pub fn print_help() {
     println!("DefLang {VERSION} — a scripting language for HTTP workflows");
     println!();
-    text("Usage: def [--version] [--help [topic]] <file.def> [--check]");
+    text("Usage: def <command> [file]");
+    println!();
+    text("Commands:");
+    text("  run   <file>   Execute a .def script");
+    text("  check <file>   Validate without executing HTTP calls (dry-run)");
+    text("  fmt   <file>   Format a .def script (not yet implemented)");
+    text("  help  [topic]  Show language help topics");
+    println!();
+    text("Options:");
+    text("  --version   Print the version number");
+    text("  --help      Show this help message");
     println!();
     text("Topics:");
     text("  array          Ordered collection of values with indexed access and iteration");
@@ -56,6 +49,7 @@ pub fn print_help() {
     text("  query_string   URL query parameters inline or from .qdef template files");
     text("  request        Build and execute HTTP requests with a fluent API");
     text("  response       Inspect HTTP response status, headers, and body");
+    text("  retry          Retry, backoff strategies, and per-attempt timeout");
     text("  string         Text values and string operations");
     text("  tuple          Key/value pairs used for headers and query parameters");
     println!();
@@ -64,8 +58,8 @@ pub fn print_help() {
     text("  qdef                    → query_string");
     text("  jdef, tdef, json, text  → body");
     println!();
-    text("Run 'def --help <topic>' for details and examples.");
-    text("Run 'def --help about' for information about DefLang.");
+    text("Run 'def help <topic>' for details and examples.");
+    text("Run 'def help about' for information about DefLang.");
 }
 
 pub fn print_topic(topic: &str) {
@@ -89,11 +83,12 @@ pub fn print_topic(topic: &str) {
         "query_string" | "qdef" => print_query_string(),
         "request" => print_request(),
         "response" => print_response(),
+        "retry" => print_retry(),
         "string" => print_string(),
         "tuple" => print_tuple(),
         other => {
             eprintln!("unknown help topic '{other}'");
-            eprintln!("Run 'def --help' for a list of all topics.");
+            eprintln!("Run 'def help' for a list of all topics.");
             process::exit(1);
         }
     }
@@ -153,7 +148,7 @@ fn print_check() {
     text("  delay() are suppressed. Imports are loaded and validated recursively.");
     text("  Exits with code 0 on success, 1 on error.");
     section("SYNTAX");
-    text("  def <file.def> --check");
+    text("  def check <file.def>");
     section("WHAT IS CAUGHT");
     text("  Lexer/parser errors   Syntax problems, invalid tokens");
     text("  Undefined variables   References to variables that were never declared");
@@ -164,10 +159,10 @@ fn print_check() {
     text("  HTTP response values  Assertions on response status, body, or headers");
     text("  Network errors        Connection failures or timeouts");
     section("EXAMPLE");
-    text("  def workflow.def --check");
+    text("  def check workflow.def");
     text("  # workflow.def: syntax ok");
     println!();
-    text("  def broken.def --check");
+    text("  def check broken.def");
     text("  # runtime error: unknown request method 'retry' at line 5 in 'broken.def'");
 }
 
@@ -722,16 +717,22 @@ fn print_request() {
     text("  Call .do() to send the request — it returns a response value.");
     text("  Supports GET, POST, PUT, PATCH, DELETE, and any other HTTP method.");
     section("BUILDER METHODS");
-    text("  .path(url)                    Set the request URL");
-    text("  .header(tuple(name, value))   Add or replace a request header");
-    text("  .headers_from(path)           Load headers from a .hdef file");
-    text("  .query_string(tuple(k, v))    Append a query parameter");
-    text("  .query_string_from(path)      Load query params from a .qdef file");
-    text("  .body_from(path)              Load body from a .jdef or .tdef file");
-    text("  .type(JSON)                   Set Content-Type: application/json");
-    text("  .type(TEXT)                   Set Content-Type: text/plain");
-    text("  .with_var(variable)           Register a string for template substitution");
-    text("  .do()                         Send the request, return a response");
+    text("  .path(url)                       Set the request URL");
+    text("  .header(tuple(name, value))      Add or replace a request header");
+    text("  .headers_from(path)              Load headers from a .hdef file");
+    text("  .query_string(tuple(k, v))       Append a query parameter");
+    text("  .query_string_from(path)         Load query params from a .qdef file");
+    text("  .body_from(path)                 Load body from a .jdef or .tdef file");
+    text("  .type(JSON)                      Set Content-Type: application/json");
+    text("  .type(TEXT)                      Set Content-Type: text/plain");
+    text("  .with_var(variable)              Register a string for template substitution");
+    text("  .retries(n)                      Retry up to n times on failure");
+    text("  .fixed_backoff(ms)               Wait ms between retries (constant)");
+    text("  .linear_backoff(ms)              Wait ms, 2×ms, 3×ms, ... between retries");
+    text("  .exponential_backoff(ms)         Wait ms, 2×ms, 4×ms, ... between retries");
+    text("  .timeout(ms)                     Max time per attempt in milliseconds");
+    text("  .timeout(ms, \"message\")          Max time per attempt; show message on failure");
+    text("  .do()                            Send the request, return a response");
     section("EXAMPLE");
     text("  // GET with headers and query string");
     text("  def res as response(");
@@ -804,6 +805,58 @@ fn print_response() {
     text("  assert(ct != \"\")");
 }
 
+fn print_retry() {
+    text("RETRY");
+    section("DESCRIPTION");
+    text("  Adds automatic retry and backoff to any request. retries(n) re-sends the");
+    text("  request up to n additional times when it fails (network error or HTTP error).");
+    text("  A backoff strategy controls the wait between attempts. timeout sets the");
+    text("  maximum time allowed per individual attempt.");
+    section("RETRY");
+    text("  .retries(n)   Re-send the request up to n times on failure. Default: 0.");
+    section("BACKOFF STRATEGIES");
+    text("  Only the last backoff method set takes effect.");
+    println!();
+    text("  .fixed_backoff(ms)");
+    text("      Wait ms milliseconds before each retry (constant).");
+    text("      Attempt 1: ms   Attempt 2: ms   Attempt 3: ms");
+    println!();
+    text("  .linear_backoff(ms)");
+    text("      Wait increases by ms on each retry.");
+    text("      Attempt 1: ms   Attempt 2: 2×ms   Attempt 3: 3×ms");
+    println!();
+    text("  .exponential_backoff(ms)");
+    text("      Wait doubles on each retry.");
+    text("      Attempt 1: ms   Attempt 2: 2×ms   Attempt 3: 4×ms");
+    section("TIMEOUT");
+    text("  .timeout(ms)               Abort the attempt after ms milliseconds.");
+    text("  .timeout(ms, \"message\")    Abort after ms ms; show message on network failure.");
+    println!();
+    text("  The message replaces low-level network error text. Useful for user-facing");
+    text("  workflows where 'connection refused' is less readable than a custom string.");
+    section("EXAMPLE");
+    text("  // 3 retries with exponential backoff, 2-second timeout per attempt");
+    text("  def res as response(");
+    text("    request(GET)");
+    text("      .path(\"https://api.example.com/data\")");
+    text("      .retries(3)");
+    text("      .exponential_backoff(100)");
+    text("      .timeout(2000, \"service did not respond within 2 seconds\")");
+    text("      .do()");
+    text("  )");
+    println!();
+    text("  assert(res.ok())");
+    println!();
+    text("  // Fixed backoff, no timeout message");
+    text("  request(POST)");
+    text("    .path(\"https://api.example.com/jobs\")");
+    text("    .retries(2)");
+    text("    .fixed_backoff(500)");
+    text("    .do()");
+    section("SEE ALSO");
+    text("  def help request   Full builder method reference");
+}
+
 fn print_string() {
     text("STRING");
     section("DESCRIPTION");
@@ -874,8 +927,8 @@ fn print_expect() {
     text("  // Error message when a predicate fails:");
     text("  // runtime error: expect(status == 201) failed: status=200, ok=true, duration=142ms");
     section("SEE ALSO");
-    text("  def --help assert    Global assert() builtin");
-    text("  def --help response  Full list of response methods");
+    text("  def help assert    Global assert() builtin");
+    text("  def help response  Full list of response methods");
 }
 
 fn print_tuple() {

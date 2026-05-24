@@ -42,6 +42,7 @@ pub(super) fn printable_value(value: &Value) -> String {
         Value::Request(request) => format!("{request:?}"),
         Value::RequestHandle(request) => request.clone(),
         Value::Response(response) => response.body.clone(),
+        Value::Mock(mock) => format!("mock({} {})", mock.method, mock.url),
         Value::Uninitialized(type_annotation) => format!("{type_annotation:?}"),
         Value::Nil => "nil".to_string(),
     }
@@ -54,6 +55,7 @@ pub(super) fn coerce_value_to_type(expected: &Type, value: Value) -> DefResult<V
         (Type::Array, Value::Array(values)) => Ok(Value::Array(values)),
         (Type::Tuple, value @ Value::Tuple { .. }) => Ok(value),
         (Type::DateTime, value @ Value::DateTime(_)) => Ok(value),
+        (Type::Mock, value @ Value::Mock(_)) => Ok(value),
         (expected, value) if value.value_type().as_ref() == Some(expected) => Ok(value),
         (expected, value) => Err(DefError::Runtime(format!(
             "expected value of type {expected:?}, got {value:?}"
@@ -281,6 +283,7 @@ pub(super) fn default_value_for_type(type_annotation: &Type) -> Value {
         },
         Type::DateTime => Value::DateTime(Local::now()),
         Type::Request => Value::Uninitialized(Type::Request),
+        Type::Mock => Value::Uninitialized(Type::Mock),
         Type::Response => Value::Response(ResponseValue {
             status: 0,
             body: String::new(),

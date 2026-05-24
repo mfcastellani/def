@@ -18,6 +18,7 @@ mod collections;
 mod datetime;
 mod functions;
 mod http;
+mod mock;
 mod values;
 
 use collections::{
@@ -27,6 +28,7 @@ use collections::{
 use datetime::{call_datetime_method, is_datetime_setter};
 use functions::request_value_from_initializer;
 use http::{apply_request_method, call_response_method, new_request_value, RequestMethodResult};
+use mock::call_mock_method;
 use values::{
     apply_assignment_operator, call_string_method, coerce_assignment, coerce_value_to_type,
     default_value_for_type, evaluate_boolean_binary, evaluate_numeric_binary,
@@ -46,6 +48,7 @@ pub struct Interpreter {
     base_dir: PathBuf,
     source_file: String,
     pub(crate) dry_run: bool,
+    params: HashMap<String, String>,
 }
 
 impl Default for Interpreter {
@@ -57,6 +60,7 @@ impl Default for Interpreter {
             base_dir: PathBuf::from("."),
             source_file: String::new(),
             dry_run: false,
+            params: HashMap::new(),
         }
     }
 }
@@ -81,6 +85,11 @@ impl Interpreter {
 
     pub fn with_dry_run(mut self, dry_run: bool) -> Self {
         self.dry_run = dry_run;
+        self
+    }
+
+    pub fn with_params(mut self, params: HashMap<String, String>) -> Self {
+        self.params = params;
         self
     }
 
@@ -312,7 +321,8 @@ impl Interpreter {
         let base_dir = path.parent().unwrap_or(Path::new(".")).to_path_buf();
         let mut module = Interpreter::with_base_dir(base_dir)
             .with_source_file(path_str)
-            .with_dry_run(self.dry_run);
+            .with_dry_run(self.dry_run)
+            .with_params(self.params.clone());
         module.interpret(&program)?;
 
         self.imports.insert(import.name.clone(), module);
@@ -378,6 +388,22 @@ impl Interpreter {
             }
             Expression::Tuple(items) => self.evaluate_tuple(items, scopes),
             Expression::Request { method } => Ok(new_request_value(method)),
+            Expression::Mock { method, url } => {
+                let url_val = self.evaluate_expression(url, scopes)?;
+                let Value::String(url) = url_val else {
+                    return Err(DefError::Runtime("mock URL must be a string".to_string()));
+                };
+                Ok(Value::Mock(crate::value::MockValue {
+                    method: method.clone(),
+                    url,
+                    status: 0,
+                    body: String::new(),
+                    headers: Vec::new(),
+                    vars: Vec::new(),
+                    delay_ms: 0,
+                    configured: false,
+                }))
+            }
             Expression::Identifier(name) => {
                 if let Some(value) =
                     get_scoped_variable(scopes, name).or_else(|| self.variables.get(name))
@@ -627,6 +653,7 @@ impl Interpreter {
         }
 
         let object = self.evaluate_expression(object, scopes)?;
+
         match object {
             Value::RequestHandle(_) | Value::Request(_) => {
                 self.call_request_method(object, name, values)
@@ -636,8 +663,9 @@ impl Interpreter {
             Value::Tuple { key, value } => call_tuple_method(key, *value, name, values),
             Value::DateTime(value) => call_datetime_method(value, name, values),
             Value::String(s) => call_string_method(&s, name, values),
+            Value::Mock(mock) => call_mock_method(mock, name, values, &self.base_dir),
             _ => Err(DefError::Runtime(format!(
-                "member function '{name}' is only available on request, response, array, tuple, datetime or string values"
+                "member function '{name}' is only available on request, response, array, tuple, datetime, string or mock values"
             ))),
         }
     }

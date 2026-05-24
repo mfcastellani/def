@@ -104,6 +104,7 @@ pub enum Type {
     DateTime,
     Request,
     Response,
+    Mock,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -116,6 +117,10 @@ pub enum Expression {
     Tuple(Vec<Expression>),
     Request {
         method: String,
+    },
+    Mock {
+        method: String,
+        url: Box<Expression>,
     },
     Identifier(String),
     Binary {

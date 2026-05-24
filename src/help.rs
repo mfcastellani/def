@@ -41,12 +41,14 @@ pub fn print_help() {
     text("  envvars        Load environment variable defaults from .edef files");
     text("  expect         Assert response conditions with readable error messages");
     text("  inspect        Print request and response details for debugging");
+    text("  params         Pass runtime parameters to scripts via --param KEY=VALUE");
     text("  float          Floating-point numbers and arithmetic operators");
     text("  function       Define and call named user functions");
     text("  headers        Request headers inline or from .hdef template files");
     text("  imported       Load another .def file as a reusable module");
     text("  integer        Integer numbers and arithmetic operators");
     text("  match          Pattern matching against literal values");
+    text("  mock           Intercept HTTP requests with pre-configured responses");
     text("  query_string   URL query parameters inline or from .qdef template files");
     text("  request        Build and execute HTTP requests with a fluent API");
     text("  response       Inspect HTTP response status, headers, and body");
@@ -77,11 +79,13 @@ pub fn print_topic(topic: &str) {
         "expect" => print_expect(),
         "inspect" => print_inspect(),
         "float" => print_float(),
+        "params" | "from_cmd_param" | "cmdparam" => print_params(),
         "function" => print_function(),
         "headers" | "hdef" => print_headers(),
         "imported" => print_imported(),
         "integer" => print_integer(),
         "match" => print_match(),
+        "mock" => print_mock(),
         "query_string" | "qdef" => print_query_string(),
         "request" => print_request(),
         "response" => print_response(),
@@ -669,6 +673,99 @@ fn print_match() {
     text("  print(\"verdict: {{describe(res.status())}}\")");
 }
 
+fn print_mock() {
+    text("MOCK");
+    section("DESCRIPTION");
+    text("  Define pre-configured HTTP request/response pairs to intercept matching");
+    text("  requests without making real network calls. Mocks are matched by HTTP method");
+    text("  (case-insensitive) and exact URL string. Unmatched requests fall through to");
+    text("  the real network.");
+    text("  In dry-run (check) mode, mocks are skipped and a stub 200 is returned as usual.");
+    section("SYNTAX");
+    text("  mock(METHOD, url)               Create a mock for the given method and URL");
+    println!();
+    text("  STATUS & BODY");
+    text("    .reply(status)                Configure status code (keep body set by body_from)");
+    text("    .reply(status, body)          Configure status code and inline body string");
+    text("    .fail(status)                 Alias for .reply() — semantic marker for errors");
+    text("    .fail(status, body)           Alias for .reply(status, body)");
+    println!();
+    text("  RESPONSE HEADERS");
+    text("    .header(\"Name\", \"value\")      Add a response header inline");
+    text("    .headers_from(\"file.hdef\")    Load response headers from a .hdef file");
+    println!();
+    text("  BODY FROM FILE");
+    text("    .body_from(\"file.jdef\")       Load response body from a .jdef or .tdef file");
+    text("    .with_var(identifier)         Register a template variable for file templates");
+    println!();
+    text("  TIMING");
+    text("    .delay(ms)                    Add delay in milliseconds before responding");
+    section(".HDEF FORMAT (response headers)");
+    text("  One 'Name: value' per line. // and # lines are comments.");
+    text("  {{variable}} placeholders are substituted via with_var().");
+    println!();
+    text("  // response_headers.hdef");
+    text("  Content-Type: application/json");
+    text("  X-Request-Id: {{request_id}}");
+    section(".JDEF / .TDEF FORMAT (response body)");
+    text("  Any text file. {{variable}} placeholders are substituted via with_var().");
+    println!();
+    text("  // user.jdef");
+    text("  {\"id\": 1, \"name\": \"{{username}}\", \"email\": \"{{email}}\"}");
+    section("WITH_MOCKS");
+    text("  Pass mocks to a request using .with_mocks():");
+    println!();
+    text("  request(GET)");
+    text("    .path(url)");
+    text("    .with_mocks(array_of_mocks)   // pass an array");
+    text("    .with_mocks(single_mock)      // or a single mock value directly");
+    text("    .do()");
+    section("EXAMPLE");
+    text("  // Inline body");
+    text("  def users_mock as mock(GET, \"https://api.example.com/users\").reply(");
+    text("    200,");
+    text("    \"[{\\\"name\\\": \\\"Marcelo\\\"}]\"");
+    text("  )");
+    println!();
+    text("  // Error scenario");
+    text("  def error_mock as mock(POST, \"https://api.example.com/users\").fail(");
+    text("    409,");
+    text("    \"{\\\"error\\\": \\\"user already exists\\\"}\"");
+    text("  )");
+    println!();
+    text("  // Body from file with template variables and custom headers");
+    text("  def request_id as string(\"abc-123\")");
+    text("  def username   as string(\"Marcelo\")");
+    text("  def email      as string(\"marcelo@example.com\")");
+    println!();
+    text("  def user_mock as mock(GET, \"https://api.example.com/users/1\")");
+    text("    .with_var(request_id)");
+    text("    .with_var(username)");
+    text("    .with_var(email)");
+    text("    .headers_from(\"response_headers.hdef\")");
+    text("    .body_from(\"user.jdef\")");
+    text("    .reply(200)");
+    println!();
+    text("  // Use all mocks together");
+    text("  def mocks as array(users_mock, error_mock, user_mock)");
+    println!();
+    text("  def res as response(");
+    text("    request(GET)");
+    text("      .path(\"https://api.example.com/users/1\")");
+    text("      .with_mocks(mocks)");
+    text("      .do()");
+    text("  )");
+    println!();
+    text("  assert(res.ok())");
+    text("  assert(res.body_contains(\"Marcelo\"))");
+    text("  assert(res.header(\"Content-Type\") == \"application/json\")");
+    section("SEE ALSO");
+    text("  def help request   Full request builder method reference");
+    text("  def help response  Response inspection methods");
+    text("  def help body      Body template files (.jdef / .tdef)");
+    text("  def help headers   Header files (.hdef)");
+}
+
 fn print_query_string() {
     text("QUERY_STRING  (alias: qdef)");
     section("DESCRIPTION");
@@ -937,6 +1034,60 @@ fn print_expect() {
     section("SEE ALSO");
     text("  def help assert    Global assert() builtin");
     text("  def help response  Full list of response methods");
+}
+
+fn print_params() {
+    text("PARAMS  (alias: from_cmd_param, cmdparam)");
+    section("DESCRIPTION");
+    text("  Scripts can accept runtime parameters so they can be run against different");
+    text("  data without editing the file. Pass values on the command line with");
+    text("  --param KEY=VALUE (repeatable). Read them inside the script with the");
+    text("  from_cmd_param() built-in function.");
+    section("CLI USAGE");
+    text("  def run script.def --param cpf=999.000.111-00 --param page=2");
+    text("  def check script.def --param cpf=999.000.111-00");
+    section("SYNTAX");
+    text("  from_cmd_param(\"name\", default)   Read param; use default if not passed");
+    text("  from_cmd_param(\"name\")            Read param; abort if not passed");
+    println!();
+    text("  The default value's type determines how the CLI string is parsed:");
+    println!();
+    text("  def cpf    as string(from_cmd_param(\"cpf\",    \"000.000.000-00\"))");
+    text("  def count  as integer(from_cmd_param(\"count\",  0))");
+    text("  def price  as float(from_cmd_param(\"price\",   9.99))");
+    text("  def active as boolean(from_cmd_param(\"active\", false))");
+    println!();
+    text("  For datetime, pass a datetime default:");
+    text("  def now as datetime");
+    text("  def start as datetime(from_cmd_param(\"start\", now))");
+    text("  // --param start=2026-01-15  or  --param start=2026-01-15T10:30:00+00:00");
+    section("ERRORS");
+    text("  If the param is missing and no default is given:");
+    text("    runtime error: required param 'cpf' not provided — pass --param cpf=<value>");
+    println!();
+    text("  If the value cannot be parsed into the target type:");
+    text("    runtime error: cannot parse param 'count' value \"batata\" as integer");
+    section("EXAMPLE");
+    text("  // create_user.def");
+    text("  def cpf   as string(from_cmd_param(\"cpf\",  \"111.222.333-44\"))");
+    text("  def name  as string(from_cmd_param(\"name\", \"Test User\"))");
+    text("  def page  as integer(from_cmd_param(\"page\",  1))");
+    println!();
+    text("  def res as response(");
+    text("    request(POST)");
+    text("      .path(concat(\"https://api.example.com/users/\", cpf))");
+    text("      .body_from(\"body/user.jdef\")");
+    text("      .with_var(name)");
+    text("      .with_var(page)");
+    text("      .do()");
+    text("  )");
+    println!();
+    text("  assert(res.ok())");
+    println!();
+    text("  // Run: def run create_user.def --param cpf=999.000.111-00 --param name=\"João\"");
+    section("SEE ALSO");
+    text("  def help request   Request builder methods including with_var");
+    text("  def help inspect   Debug requests and responses at runtime");
 }
 
 fn print_inspect() {

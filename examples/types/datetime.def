@@ -58,3 +58,11 @@ assert(configured.hour() == 8)
 assert(configured.minute() == 30)
 assert(configured.second() == 45)
 assert(label == "formatted")
+print("all assertions passed")
+
+// Command-line parameter support
+// Run with: def run datetime.def --param report_date=2026-01-01
+// or with full RFC3339: --param report_date=2026-01-01T00:00:00+00:00
+def report_date as datetime(from_cmd_param("report_date", now))
+def report_date_str as string(report_date.format("dd/mm/yyyy"))
+print("report_date (--param or default): {{report_date_str}}")

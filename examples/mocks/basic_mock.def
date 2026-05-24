@@ -1,0 +1,110 @@
+// Mock guide
+// Use mock(METHOD, URL) to define expected request/response pairs.
+// Pass mocks to request.with_mocks() to intercept matching requests
+// without making real HTTP calls.
+
+// Basic reply mock
+def users_mock as mock(GET, "https://api.github.com/users").reply(
+  200,
+  "name: Marcelo, login: mfcastellani"
+)
+
+// Error scenario mock
+def error_mock as mock(POST, "https://api.example.com/users").fail(
+  409,
+  "error: user already exists"
+)
+
+// Mock with delay (simulates a slow server)
+def slow_mock as mock(GET, "https://slowserver.example.com/data").delay(100).reply(
+  200,
+  "data: slow response"
+)
+
+// Mock with inline header
+def header_mock as mock(GET, "https://api.example.com/ping")
+  .header("X-Service", "mock")
+  .header("Cache-Control", "no-cache")
+  .reply(200, "pong")
+
+// Mock with headers from .hdef file and body from .jdef file
+def request_id as string("abc-123")
+def username as string("Marcelo")
+def email as string("marcelo@example.com")
+def json_mock as mock(GET, "https://api.example.com/users/1")
+  .with_var(request_id)
+  .with_var(username)
+  .with_var(email)
+  .headers_from("response_headers.hdef")
+  .body_from("user.jdef")
+  .reply(200)
+
+def mocks as array(users_mock, error_mock, slow_mock, header_mock, json_mock)
+
+// GET request — matched by users_mock
+def res as response(
+  request(GET)
+    .path("https://api.github.com/users")
+    .with_mocks(mocks)
+    .do()
+)
+
+assert(res.ok())
+assert(res.status() == 200)
+assert(res.body_contains("Marcelo"))
+print("GET users: {{res.describe_status()}}")
+
+// POST request — matched by error_mock
+def err as response(
+  request(POST)
+    .path("https://api.example.com/users")
+    .with_mocks(mocks)
+    .do()
+)
+
+assert(err.status() == 409)
+assert(err.body_contains("already exists"))
+print("POST users: {{err.describe_status()}}")
+
+// Inline mock — no array needed for a single mock
+def inline_res as response(
+  request(GET)
+    .path("https://api.example.com/health")
+    .with_mocks(mock(GET, "https://api.example.com/health").reply(200, "ok"))
+    .do()
+)
+
+assert(inline_res.ok())
+print("health check: {{inline_res.describe_status()}}")
+
+// Header mock — verifies response headers
+def ping_res as response(
+  request(GET)
+    .path("https://api.example.com/ping")
+    .with_mocks(header_mock)
+    .do()
+)
+
+assert(ping_res.ok())
+assert(ping_res.header("X-Service") == "mock")
+assert(ping_res.header("Cache-Control") == "no-cache")
+def ping_service_header as string(ping_res.header("X-Service"))
+print("header mock: {{ping_res.describe_status()}}, X-Service: {{ping_service_header}}")
+
+// JSON body from file — verifies templated response body and headers
+def user_res as response(
+  request(GET)
+    .path("https://api.example.com/users/1")
+    .with_mocks(json_mock)
+    .do()
+)
+
+assert(user_res.ok())
+assert(user_res.body_contains("Marcelo"))
+assert(user_res.body_contains("marcelo@example.com"))
+assert(user_res.header("Content-Type") == "application/json")
+assert(user_res.header("X-Request-Id") == "abc-123")
+def user_content_type as string(user_res.header("Content-Type"))
+print("json mock: {{user_res.describe_status()}}, Content-Type: {{user_content_type}}")
+
+print("all assertions passed")

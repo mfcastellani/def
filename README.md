@@ -49,43 +49,6 @@ Run the test suite:
 cargo test
 ```
 
-## CLI
-
-```
-Usage: def <command> [file]
-
-Commands:
-  run   <file>   Execute a .def script
-  check <file>   Validate without executing HTTP calls (dry-run)
-  fmt   <file>   Format a .def script (not yet implemented)
-  help  [topic]  Show language help topics
-
-Options:
-  --version   Print the version number
-  --help      Show this help message
-```
-
-## Dry-run / Syntax Check
-
-Use `def check` to run the script in dry-run mode: the full interpreter executes, but HTTP calls return a stub `200` response instead of hitting the network. `print()` and `delay()` are suppressed. Imports are loaded and validated recursively.
-
-This catches syntax errors, undefined variables, unknown methods, wrong argument counts, and type errors — everything except assertions on HTTP response values.
-
-```bash
-def check workflow.def
-# workflow.def: syntax ok
-
-def check broken.def
-# runtime error: unknown request method 'retry' at line 5 in 'broken.def'
-```
-
-All errors include the line number and file name:
-
-```
-parser error: expected ')' after variable initializer at line 5 in 'workflow.def'
-runtime error: undefined identifier 'base_url' at line 12 in 'helpers.def'
-```
-
 ## Basic Syntax
 
 The `def` keyword declares variables and functions. Functions do not use `return`, the last evaluated expression in the body is the return value.
@@ -642,6 +605,220 @@ Both methods return `self`, so `res.inspect()` can be used as a standalone state
 ### Supported HTTP methods
 
 `GET`, `POST`, `PUT`, `PATCH`, `DELETE`, and any other method string accepted by the server.
+
+## CLI
+
+```
+Usage: def <command> [file] [--param KEY=VALUE]...
+
+Commands:
+  run   <file>   Execute a .def script
+  check <file>   Validate without executing HTTP calls (dry-run)
+  fmt   <file>   Format a .def script (not yet implemented)
+  help  [topic]  Show language help topics
+
+Options:
+  --param KEY=VALUE   Pass a named parameter to the script (repeatable)
+  --version           Print the version number
+  --help              Show this help message
+```
+
+## Mocks
+
+Mocks let you intercept HTTP requests and return pre-configured responses without hitting the network. They are useful for testing workflows, error scenarios, slow-server simulation, and endpoints that don't exist yet.
+
+Define a mock with `mock(METHOD, URL)` and configure its response:
+
+```def
+// Inline body
+def users_mock as mock(GET, "https://api.example.com/users").reply(200, "name: Marcelo")
+
+// Error scenario (semantic alias for .reply())
+def error_mock as mock(POST, "https://api.example.com/users").fail(409, "error: conflict")
+
+// Simulated slow response
+def slow_mock as mock(GET, "https://slowserver.example.com/data").delay(100).reply(200, "ok")
+```
+
+Pass mocks to a request using `.with_mocks()` — accepts a single mock or an array:
+
+```def
+def mocks as array(users_mock, error_mock, slow_mock)
+
+def res as response(
+  request(GET)
+    .path("https://api.example.com/users")
+    .with_mocks(mocks)
+    .do()
+)
+
+assert(res.ok())
+assert(res.status() == 200)
+assert(res.body_contains("Marcelo"))
+```
+
+**Inline mock** — pass a single mock directly without declaring it first:
+
+```def
+def health as response(
+  request(GET)
+    .path("https://api.example.com/health")
+    .with_mocks(mock(GET, "https://api.example.com/health").reply(200, "ok"))
+    .do()
+)
+
+assert(health.ok())
+```
+
+### Response headers
+
+Use `.header()` to add individual headers inline, or `.headers_from()` to load them from a `.hdef` file — the same format used for request headers:
+
+```def
+// Inline headers
+def header_mock as mock(GET, "https://api.example.com/ping")
+  .header("X-Service", "mock")
+  .header("Cache-Control", "no-cache")
+  .reply(200, "pong")
+
+// From a .hdef file (Content-Type: application/json\nX-Request-Id: {{request_id}})
+def request_id as string("abc-123")
+
+def json_mock as mock(GET, "https://api.example.com/users/1")
+  .with_var(request_id)
+  .headers_from("response_headers.hdef")
+  .reply(200, "{\"id\": 1}")
+```
+
+The response's `header()` method then works exactly as it does for real responses:
+
+```def
+assert(ping_res.header("X-Service") == "mock")
+assert(json_res.header("Content-Type") == "application/json")
+```
+
+### Body from file
+
+Use `.body_from()` to load the response body from a `.jdef` (JSON) or `.tdef` (text) template file, using the same `{{variable}}` substitution as request bodies. Register variables with `.with_var()` before calling `headers_from` or `body_from`, then set the status code with `.reply()`:
+
+```def
+// user.jdef: {"id": 1, "name": "{{username}}", "email": "{{email}}"}
+// response_headers.hdef: Content-Type: application/json\nX-Request-Id: {{request_id}}
+
+def request_id as string("abc-123")
+def username   as string("Marcelo")
+def email      as string("marcelo@example.com")
+
+def user_mock as mock(GET, "https://api.example.com/users/1")
+  .with_var(request_id)
+  .with_var(username)
+  .with_var(email)
+  .headers_from("response_headers.hdef")
+  .body_from("user.jdef")
+  .reply(200)
+
+def res as response(
+  request(GET)
+    .path("https://api.example.com/users/1")
+    .with_mocks(user_mock)
+    .do()
+)
+
+assert(res.ok())
+assert(res.body_contains("Marcelo"))
+assert(res.header("Content-Type") == "application/json")
+assert(res.header("X-Request-Id") == "abc-123")
+```
+
+**Mock matching rules:**
+
+- Matched by HTTP method (case-insensitive) + URL (exact string)
+- If a mock matches but has no `.reply()` or `.fail()` configured → runtime error
+- If no mock matches → the real HTTP request is made
+- In dry-run (`check`) mode → mocks are skipped; a stub 200 is returned as usual
+
+**Mock methods:**
+
+| Method | Description |
+|---|---|
+| `.reply(status)` | Set status code; preserves body set by `body_from` |
+| `.reply(status, body)` | Set status code and inline body string |
+| `.fail(status)` | Same as `.reply(status)` — semantic alias for error cases |
+| `.fail(status, body)` | Same as `.reply(status, body)` |
+| `.header("Name", "value")` | Add a response header inline |
+| `.headers_from("file.hdef")` | Load response headers from a `.hdef` file |
+| `.body_from("file.jdef")` | Load response body from a `.jdef` or `.tdef` file |
+| `.with_var(identifier)` | Register a template variable for file templates |
+| `.delay(ms)` | Add delay in milliseconds before responding; chainable |
+
+## Dry-run / Syntax Check
+
+Use `def check` to run the script in dry-run mode: the full interpreter executes, but HTTP calls return a stub `200` response instead of hitting the network. `print()` and `delay()` are suppressed. Imports are loaded and validated recursively.
+
+This catches syntax errors, undefined variables, unknown methods, wrong argument counts, and type errors — everything except assertions on HTTP response values.
+
+```bash
+def check workflow.def
+# workflow.def: syntax ok
+
+def check broken.def
+# runtime error: unknown request method 'retry' at line 5 in 'broken.def'
+```
+
+All errors include the line number and file name:
+
+```
+parser error: expected ')' after variable initializer at line 5 in 'workflow.def'
+runtime error: undefined identifier 'base_url' at line 12 in 'helpers.def'
+```
+
+## Command-line Parameters
+
+Scripts can accept runtime parameters so you don't have to edit the file between runs. Pass them with `--param KEY=VALUE` (repeatable):
+
+```bash
+def run create_user.def --param cpf=999.000.111-00 --param name="João Silva"
+```
+
+Inside the script, use `from_cmd_param("key", default)` to read a parameter. The **type of the default value** determines how the CLI string is parsed:
+
+```def
+def cpf   as string(from_cmd_param("cpf",  "000.000.000-00"))
+def count as integer(from_cmd_param("count", 0))
+def price as float(from_cmd_param("price",  9.99))
+def active as boolean(from_cmd_param("active", false))
+```
+
+For datetime, pass a variable or expression as the default:
+
+```def
+def now as datetime
+def report_date as datetime(from_cmd_param("report_date", now))
+```
+
+If the parameter is not passed and no default is provided, execution aborts with a clear error:
+
+```def
+def cpf as string(from_cmd_param("cpf"))
+// runtime error: required param 'cpf' not provided — pass --param cpf=<value>
+```
+
+If the parameter value cannot be parsed into the target type, execution aborts:
+
+```bash
+def run script.def --param count=batata
+# runtime error: cannot parse param 'count' value "batata" as integer
+```
+
+Datetime parameters accept RFC3339 (`2026-01-15T10:30:00+00:00`) or date-only (`2026-01-15`) format.
+
+Parameters are available to the whole script including imported modules.
+
+The `--param` flag works with both `run` and `check`:
+
+```bash
+def check create_user.def --param cpf=999.000.111-00
+```
 
 ## Examples
 

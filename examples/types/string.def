@@ -33,3 +33,9 @@ assert(empty == "")
 assert(name == "Marcelo")
 assert(greet(name) == "Hello, Marcelo")
 assert(label == "known")
+print("all assertions passed")
+
+// Command-line parameter support
+// Run with: def run string.def --param greeting_name=World
+def greeting_name as string(from_cmd_param("greeting_name", "DefLang"))
+print("Hello, {{greeting_name}}")

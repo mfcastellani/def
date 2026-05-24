@@ -1,0 +1,48 @@
+// Boolean guide
+// Booleans are true or false. They support not, and, or operators.
+// This example also shows default values, functions, if, match, print, assertions,
+// and command-line parameter support.
+
+def default_flag as boolean
+def enabled as boolean(true)
+def disabled as boolean(false)
+
+def toggle as function(value as boolean) (
+  not value
+)
+
+def label as string(
+  match enabled (
+    true  => "on",
+    false => "off"
+  )
+)
+
+if enabled (
+  print("boolean if branch")
+) else (
+  print("boolean else branch")
+)
+
+print(default_flag)
+print(enabled)
+print(disabled)
+print(label)
+
+assert(default_flag == false)
+assert(enabled == true)
+assert(disabled == false)
+assert(toggle(enabled) == false)
+assert(toggle(disabled) == true)
+assert((true and true) == true)
+assert((true and false) == false)
+assert((false or true) == true)
+assert((false or false) == false)
+assert((not true) == false)
+assert(label == "on")
+print("all assertions passed")
+
+// Command-line parameter support
+// Run with: def run boolean.def --param feature=true
+def feature as boolean(from_cmd_param("feature", false))
+print("feature (--param or default): {{feature}}")

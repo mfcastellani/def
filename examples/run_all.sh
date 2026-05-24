@@ -17,12 +17,14 @@ local_examples=(
   "examples/language/match.def"
   "examples/language/returned-value.def"
   "examples/types/array.def"
+  "examples/types/boolean.def"
   "examples/types/datetime.def"
   "examples/types/float.def"
   "examples/types/integer.def"
   "examples/types/string.def"
   "examples/types/tuple.def"
   "examples/env/request_env.def"
+  "examples/mocks/basic_mock.def"
 )
 
 http_examples=(
@@ -44,7 +46,7 @@ failed=0
 for example in "${examples[@]}"; do
   echo
   echo "==> $example"
-  if ! cargo run --manifest-path "$REPO_ROOT/Cargo.toml" -- "$REPO_ROOT/$example"; then
+  if ! cargo run --manifest-path "$REPO_ROOT/Cargo.toml" -- run "$REPO_ROOT/$example"; then
     echo "FAILED: $example"
     failed=1
   fi

@@ -1,7 +1,7 @@
 use super::*;
 use crate::lexer::Lexer;
 use crate::parser::Parser;
-use crate::value::ResponseValue;
+use crate::value::{MockValue, ResponseValue};
 use std::fs;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -40,6 +40,28 @@ fn interpret_error(input: &str, base_dir: impl Into<PathBuf>) -> DefError {
     Interpreter::with_base_dir(base_dir)
         .interpret(&program)
         .unwrap_err()
+}
+
+fn run_with_params(input: &str, params: &[(&str, &str)]) -> Value {
+    let map: HashMap<String, String> = params
+        .iter()
+        .map(|(k, v)| (k.to_string(), v.to_string()))
+        .collect();
+    let mut lexer = Lexer::new(input);
+    let tokens = lexer.tokenize().unwrap();
+    let program = Parser::new(tokens).parse_program().unwrap();
+    Interpreter::new().with_params(map).interpret(&program).unwrap()
+}
+
+fn run_with_params_error(input: &str, params: &[(&str, &str)]) -> DefError {
+    let map: HashMap<String, String> = params
+        .iter()
+        .map(|(k, v)| (k.to_string(), v.to_string()))
+        .collect();
+    let mut lexer = Lexer::new(input);
+    let tokens = lexer.tokenize().unwrap();
+    let program = Parser::new(tokens).parse_program().unwrap();
+    Interpreter::new().with_params(map).interpret(&program).unwrap_err()
 }
 
 fn temp_dir() -> PathBuf {
@@ -1410,4 +1432,264 @@ fn request_status_requires_execution() {
     assert!(
         matches!(error, DefError::Runtime(message) if message.contains("has not been executed"))
     );
+}
+
+// ── from_cmd_param ────────────────────────────────────────────────────────────
+
+fn interp_with_params(input: &str, params: &[(&str, &str)]) -> Interpreter {
+    let map: HashMap<String, String> = params
+        .iter()
+        .map(|(k, v)| (k.to_string(), v.to_string()))
+        .collect();
+    let mut lexer = Lexer::new(input);
+    let tokens = lexer.tokenize().unwrap();
+    let program = Parser::new(tokens).parse_program().unwrap();
+    let mut interp = Interpreter::new().with_params(map);
+    interp.interpret(&program).unwrap();
+    interp
+}
+
+#[test]
+fn from_cmd_param_string_uses_param_when_provided() {
+    let interp = interp_with_params(
+        "def name as string(from_cmd_param(\"name\", \"default\"))",
+        &[("name", "hello")],
+    );
+    assert_eq!(interp.variables.get("name"), Some(&Value::String("hello".to_string())));
+}
+
+#[test]
+fn from_cmd_param_string_uses_default_when_param_missing() {
+    let interp = interp_with_params(
+        "def name as string(from_cmd_param(\"name\", \"default\"))",
+        &[],
+    );
+    assert_eq!(interp.variables.get("name"), Some(&Value::String("default".to_string())));
+}
+
+#[test]
+fn from_cmd_param_integer_parses_param() {
+    let interp = interp_with_params(
+        "def count as integer(from_cmd_param(\"count\", 0))",
+        &[("count", "42")],
+    );
+    assert_eq!(interp.variables.get("count"), Some(&Value::Integer(42)));
+}
+
+#[test]
+fn from_cmd_param_integer_uses_default_when_missing() {
+    let interp = interp_with_params(
+        "def count as integer(from_cmd_param(\"count\", 99))",
+        &[],
+    );
+    assert_eq!(interp.variables.get("count"), Some(&Value::Integer(99)));
+}
+
+#[test]
+fn from_cmd_param_float_parses_param() {
+    let interp = interp_with_params(
+        "def rate as float(from_cmd_param(\"rate\", 0.0))",
+        &[("rate", "3.14")],
+    );
+    assert_eq!(interp.variables.get("rate"), Some(&Value::Float(3.14)));
+}
+
+#[test]
+fn from_cmd_param_boolean_parses_true() {
+    let interp = interp_with_params(
+        "def active as boolean(from_cmd_param(\"active\", false))",
+        &[("active", "true")],
+    );
+    assert_eq!(interp.variables.get("active"), Some(&Value::Boolean(true)));
+}
+
+#[test]
+fn from_cmd_param_boolean_parses_false() {
+    let interp = interp_with_params(
+        "def active as boolean(from_cmd_param(\"active\", true))",
+        &[("active", "false")],
+    );
+    assert_eq!(interp.variables.get("active"), Some(&Value::Boolean(false)));
+}
+
+#[test]
+fn from_cmd_param_errors_on_invalid_integer() {
+    let error = run_with_params_error(
+        "def count as integer(from_cmd_param(\"count\", 0))",
+        &[("count", "batata")],
+    );
+    assert!(matches!(error, DefError::Runtime(m) if m.contains("cannot parse param 'count'") && m.contains("as integer")));
+}
+
+#[test]
+fn from_cmd_param_errors_on_invalid_boolean() {
+    let error = run_with_params_error(
+        "def active as boolean(from_cmd_param(\"active\", false))",
+        &[("active", "yes")],
+    );
+    assert!(matches!(error, DefError::Runtime(m) if m.contains("cannot parse param 'active'") && m.contains("as boolean")));
+}
+
+#[test]
+fn from_cmd_param_errors_when_required_param_missing() {
+    let error = run_with_params_error(
+        "def cpf as string(from_cmd_param(\"cpf\"))",
+        &[],
+    );
+    assert!(matches!(error, DefError::Runtime(m) if m.contains("required param 'cpf' not provided")));
+}
+
+#[test]
+fn from_cmd_param_works_in_template_interpolation() {
+    let interp = interp_with_params(
+        "def cpf as string(from_cmd_param(\"cpf\", \"000.000.000-00\"))\n\
+         def msg as string(concat(\"cpf=\", cpf))",
+        &[("cpf", "999.000.111-00")],
+    );
+    assert_eq!(
+        interp.variables.get("msg"),
+        Some(&Value::String("cpf=999.000.111-00".to_string()))
+    );
+}
+
+// ── mock tests ────────────────────────────────────────────────────────────────
+
+#[test]
+fn mock_reply_returns_configured_response() {
+    let value = run(
+        "def m as mock(GET, \"https://api.example.com/users\").reply(200, \"name: Marcelo\")\n\
+         def res as response(\n\
+           request(GET)\n\
+             .path(\"https://api.example.com/users\")\n\
+             .with_mocks(m)\n\
+             .do()\n\
+         )\n\
+         assert(res.ok())\n\
+         assert(res.status() == 200)\n\
+         assert(res.body_contains(\"Marcelo\"))",
+    );
+    assert_eq!(value, Value::Boolean(true));
+}
+
+#[test]
+fn mock_fail_returns_error_response() {
+    let value = run(
+        "def m as mock(POST, \"https://api.example.com/users\").fail(409, \"error: conflict\")\n\
+         def res as response(\n\
+           request(POST)\n\
+             .path(\"https://api.example.com/users\")\n\
+             .with_mocks(m)\n\
+             .do()\n\
+         )\n\
+         assert(res.status() == 409)\n\
+         assert(res.body_contains(\"conflict\"))",
+    );
+    assert_eq!(value, Value::Boolean(true));
+}
+
+#[test]
+fn mock_unmatched_url_does_not_intercept() {
+    // A mock for a different URL should not intercept the request.
+    // The request would fail as a network error to 127.0.0.1:1 (unreachable),
+    // confirming the mock did not short-circuit.
+    let mut lexer = Lexer::new(
+        "def m as mock(GET, \"https://api.example.com/other\").reply(200, \"ok\")\n\
+         def res as response(\n\
+           request(GET)\n\
+             .path(\"http://127.0.0.1:1/users\")\n\
+             .with_mocks(m)\n\
+             .do()\n\
+         )",
+    );
+    let tokens = lexer.tokenize().unwrap();
+    let program = Parser::new(tokens).parse_program().unwrap();
+    let error = Interpreter::new().interpret(&program).unwrap_err();
+    // Should be a network/request error (not a mock error)
+    assert!(matches!(error, DefError::Request(_)));
+}
+
+#[test]
+fn mock_without_reply_errors() {
+    let error = interpret_error(
+        "def m as mock(GET, \"https://api.example.com/users\")\n\
+         def res as response(\n\
+           request(GET)\n\
+             .path(\"https://api.example.com/users\")\n\
+             .with_mocks(m)\n\
+             .do()\n\
+         )",
+        ".",
+    );
+    assert!(
+        matches!(&error, DefError::Runtime(msg) if msg.contains("no reply configured")),
+        "unexpected error: {error:?}"
+    );
+}
+
+#[test]
+fn mock_delay_sets_delay_ms() {
+    // Verify that .delay() sets the delay_ms field on the mock value
+    let interpreter = interpreter_after(
+        "def m as mock(GET, \"https://api.example.com\").delay(100).reply(200, \"ok\")",
+        ".",
+    );
+    match interpreter.variables.get("m") {
+        Some(Value::Mock(MockValue { delay_ms, configured, status, .. })) => {
+            assert_eq!(*delay_ms, 100);
+            assert!(*configured);
+            assert_eq!(*status, 200);
+        }
+        other => panic!("expected mock value, got {other:?}"),
+    }
+}
+
+#[test]
+fn mock_inline_in_with_mocks() {
+    // Single mock passed directly to with_mocks (not wrapped in array)
+    let value = run(
+        "def res as response(\n\
+           request(GET)\n\
+             .path(\"https://api.example.com/health\")\n\
+             .with_mocks(mock(GET, \"https://api.example.com/health\").reply(200, \"ok\"))\n\
+             .do()\n\
+         )\n\
+         assert(res.ok())\n\
+         assert(res.status() == 200)",
+    );
+    assert_eq!(value, Value::Boolean(true));
+}
+
+#[test]
+fn mock_method_is_case_insensitive() {
+    let value = run(
+        "def m as mock(get, \"https://api.example.com/users\").reply(200, \"ok\")\n\
+         def res as response(\n\
+           request(GET)\n\
+             .path(\"https://api.example.com/users\")\n\
+             .with_mocks(m)\n\
+             .do()\n\
+         )\n\
+         assert(res.ok())",
+    );
+    assert_eq!(value, Value::Boolean(true));
+}
+
+#[test]
+fn mock_array_with_multiple_mocks() {
+    let value = run(
+        "def m1 as mock(GET, \"https://api.example.com/a\").reply(200, \"a\")\n\
+         def m2 as mock(POST, \"https://api.example.com/b\").reply(201, \"b\")\n\
+         def mocks as array(m1, m2)\n\
+         def r1 as response(\n\
+           request(GET).path(\"https://api.example.com/a\").with_mocks(mocks).do()\n\
+         )\n\
+         def r2 as response(\n\
+           request(POST).path(\"https://api.example.com/b\").with_mocks(mocks).do()\n\
+         )\n\
+         assert(r1.status() == 200)\n\
+         assert(r1.body_contains(\"a\"))\n\
+         assert(r2.status() == 201)\n\
+         assert(r2.body_contains(\"b\"))",
+    );
+    assert_eq!(value, Value::Boolean(true));
 }

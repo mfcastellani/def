@@ -121,7 +121,7 @@ impl Parser {
         let type_annotation = self.parse_type()?;
         let initializer = if self.matches(&Token::LeftParen) {
             if self.check(&Token::RightParen)
-                && !matches!(type_annotation, Type::Array | Type::Tuple)
+                && !matches!(type_annotation, Type::Array | Type::Tuple | Type::Mock)
             {
                 self.advance();
                 if self.check(&Token::Dot) {
@@ -160,6 +160,25 @@ impl Parser {
             Type::Tuple => Ok(Expression::Tuple(
                 self.parse_expression_list_until_right_paren()?,
             )),
+            Type::Mock => {
+                self.skip_newlines();
+                let method = match self.advance() {
+                    Token::Identifier(m) => m.to_ascii_uppercase(),
+                    Token::String(m) => m.to_ascii_uppercase(),
+                    token => return Err(DefError::Parse(format!(
+                        "expected HTTP method in mock(...) at line {}, found {token:?}",
+                        self.current_line
+                    ))),
+                };
+                self.skip_newlines();
+                self.consume(&Token::Comma, "expected ',' after mock method")?;
+                self.skip_newlines();
+                let url_expr = self.parse_expression()?;
+                self.skip_newlines();
+                self.consume(&Token::RightParen, "expected ')' after mock URL")?;
+                let base = Expression::Mock { method, url: Box::new(url_expr) };
+                self.parse_postfix_expression(base)
+            }
             _ => {
                 self.skip_newlines();
                 if self.check(&Token::Def) {
@@ -311,6 +330,7 @@ impl Parser {
             Token::TypeTuple => Ok(Type::Tuple),
             Token::TypeDateTime => Ok(Type::DateTime),
             Token::TypeRequest => Ok(Type::Request),
+            Token::TypeMock => Ok(Type::Mock),
             Token::Identifier(name) if name == "response" => Ok(Type::Response),
             token => Err(DefError::Parse(format!(
                 "expected type at line {}, found {token:?}",
@@ -493,6 +513,25 @@ impl Parser {
                 };
                 self.consume(&Token::RightParen, "expected ')' after request method")?;
                 Expression::Request { method }
+            }
+            Token::TypeMock => {
+                self.consume(&Token::LeftParen, "expected '(' after 'mock'")?;
+                self.skip_newlines();
+                let method = match self.advance() {
+                    Token::Identifier(m) => m.to_ascii_uppercase(),
+                    Token::String(m) => m.to_ascii_uppercase(),
+                    token => return Err(DefError::Parse(format!(
+                        "expected HTTP method in mock(...) at line {}, found {token:?}",
+                        self.current_line
+                    ))),
+                };
+                self.skip_newlines();
+                self.consume(&Token::Comma, "expected ',' after mock method")?;
+                self.skip_newlines();
+                let url_expr = self.parse_expression()?;
+                self.skip_newlines();
+                self.consume(&Token::RightParen, "expected ')' after mock URL")?;
+                Expression::Mock { method, url: Box::new(url_expr) }
             }
             Token::Identifier(name) => {
                 if self.check(&Token::LeftParen)
@@ -695,6 +734,7 @@ impl Parser {
                 | Some(Token::TypeArray)
                 | Some(Token::TypeTuple)
                 | Some(Token::TypeRequest)
+                | Some(Token::TypeMock)
                 | Some(Token::Match)
                 | Some(Token::Integer(_))
                 | Some(Token::Float(_))

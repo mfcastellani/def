@@ -21,6 +21,7 @@ pub(super) fn new_request_value(method: &str) -> Value {
         backoff: BackoffStrategy::None,
         timeout_ms: None,
         timeout_message: None,
+        mocks: Vec::new(),
     })
 }
 
@@ -272,6 +273,20 @@ pub(super) fn apply_request_method(
             }
             Ok(RequestMethodResult::Request)
         }
+        "with_mocks" => {
+            let mock_list = match args.as_slice() {
+                [Value::Array(items)] => items.clone(),
+                [Value::Mock(m)] => vec![Value::Mock(m.clone())],
+                _ => return Err(DefError::Runtime("request.with_mocks expects an array of mocks or a single mock".to_string())),
+            };
+            for item in mock_list {
+                match item {
+                    Value::Mock(m) => request.mocks.push(m),
+                    _ => return Err(DefError::Runtime("with_mocks array must contain only mock values".to_string())),
+                }
+            }
+            Ok(RequestMethodResult::Request)
+        }
         "do" => {
             if !args.is_empty() {
                 return Err(DefError::Runtime(format!(
@@ -439,7 +454,7 @@ fn apply_request_vars_to_body(body: &mut Option<String>, vars: &[(String, String
     }
 }
 
-fn render_template(value: &str, vars: &[(String, String)]) -> String {
+pub(super) fn render_template(value: &str, vars: &[(String, String)]) -> String {
     let mut rendered = value.to_string();
     for (name, replacement) in vars {
         rendered = rendered.replace(&format!("{{{{{name}}}}}"), replacement);
@@ -483,7 +498,7 @@ fn check_unresolved_vars(request: &RequestValue) -> DefResult<()> {
     Ok(())
 }
 
-fn read_headers_file(base_dir: &Path, header_path: &str) -> DefResult<Vec<(String, String)>> {
+pub(super) fn read_headers_file(base_dir: &Path, header_path: &str) -> DefResult<Vec<(String, String)>> {
     let path = resolve_path(base_dir, header_path);
     let source = fs::read_to_string(&path).map_err(|error| {
         DefError::Runtime(format!(
@@ -495,7 +510,7 @@ fn read_headers_file(base_dir: &Path, header_path: &str) -> DefResult<Vec<(Strin
     parse_headers_source(&source, &path.display().to_string())
 }
 
-fn read_body_file(base_dir: &Path, body_path: &str) -> DefResult<String> {
+pub(super) fn read_body_file(base_dir: &Path, body_path: &str) -> DefResult<String> {
     let path = resolve_path(base_dir, body_path);
     fs::read_to_string(&path).map_err(|error| {
         DefError::Runtime(format!(
@@ -520,7 +535,7 @@ fn read_query_string_file(
     parse_query_string_source(&source, &path.display().to_string())
 }
 
-fn parse_headers_source(source: &str, context: &str) -> DefResult<Vec<(String, String)>> {
+pub(super) fn parse_headers_source(source: &str, context: &str) -> DefResult<Vec<(String, String)>> {
     let mut headers = Vec::new();
 
     for (index, line) in source.lines().enumerate() {
@@ -578,7 +593,7 @@ fn parse_query_string_source(source: &str, context: &str) -> DefResult<Vec<(Stri
     Ok(query_strings)
 }
 
-fn resolve_path(base_dir: &Path, path: &str) -> PathBuf {
+pub(super) fn resolve_path(base_dir: &Path, path: &str) -> PathBuf {
     let path = Path::new(path);
     if path.is_absolute() {
         path.to_path_buf()
@@ -623,6 +638,27 @@ fn execute_http_request_once(request: &RequestValue) -> DefResult<Value> {
         .as_ref()
         .ok_or_else(|| DefError::Runtime("request.path must be set before request.do".to_string()))?
         .clone();
+
+    // Check mocks first
+    for mock in &request.mocks {
+        if mock.method.eq_ignore_ascii_case(&request.method) && mock.url == path {
+            if !mock.configured {
+                return Err(DefError::Runtime(format!(
+                    "mock for {} {} has no reply configured — call .reply() or .fail()",
+                    mock.method, mock.url
+                )));
+            }
+            if mock.delay_ms > 0 {
+                thread::sleep(Duration::from_millis(mock.delay_ms));
+            }
+            return Ok(Value::Response(ResponseValue {
+                status: mock.status,
+                body: mock.body.clone(),
+                headers: mock.headers.clone(),
+                duration_ms: mock.delay_ms as i64,
+            }));
+        }
+    }
 
     let mut agent_builder = ureq::AgentBuilder::new();
     if let Some(ms) = request.timeout_ms {

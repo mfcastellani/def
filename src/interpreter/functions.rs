@@ -27,6 +27,9 @@ impl Interpreter {
         if name == "concat" {
             return self.call_concat(args, scopes);
         }
+        if name == "from_cmd_param" {
+            return self.call_from_cmd_param(args, scopes);
+        }
 
         let function = self
             .functions
@@ -229,6 +232,94 @@ impl Interpreter {
         }
 
         Ok(Value::String(output))
+    }
+
+    fn call_from_cmd_param(
+        &mut self,
+        args: &[Expression],
+        scopes: &mut ScopeStack,
+    ) -> DefResult<Value> {
+        if args.is_empty() || args.len() > 2 {
+            return Err(DefError::Runtime(format!(
+                "from_cmd_param expects 1 or 2 arguments, got {}",
+                args.len()
+            )));
+        }
+
+        let name_val = self.evaluate_expression(&args[0], scopes)?;
+        let Value::String(param_name) = name_val else {
+            return Err(DefError::Runtime(
+                "from_cmd_param expects a string param name as the first argument".to_string(),
+            ));
+        };
+
+        let default = if args.len() == 2 {
+            Some(self.evaluate_expression(&args[1], scopes)?)
+        } else {
+            None
+        };
+
+        if let Some(raw) = self.params.get(&param_name).cloned() {
+            return match &default {
+                None => Ok(Value::String(raw)),
+                Some(def) => parse_cmd_param(def, &param_name, &raw),
+            };
+        }
+
+        match default {
+            Some(def) => Ok(def),
+            None => Err(DefError::Runtime(format!(
+                "required param '{param_name}' not provided — pass --param {param_name}=<value>"
+            ))),
+        }
+    }
+}
+
+fn parse_cmd_param(default: &Value, param_name: &str, raw: &str) -> DefResult<Value> {
+    match default {
+        Value::String(_) => Ok(Value::String(raw.to_string())),
+        Value::Integer(_) => raw.parse::<i64>().map(Value::Integer).map_err(|_| {
+            DefError::Runtime(format!(
+                "cannot parse param '{param_name}' value \"{raw}\" as integer"
+            ))
+        }),
+        Value::Float(_) => raw.parse::<f64>().map(Value::Float).map_err(|_| {
+            DefError::Runtime(format!(
+                "cannot parse param '{param_name}' value \"{raw}\" as float"
+            ))
+        }),
+        Value::Boolean(_) => match raw {
+            "true" => Ok(Value::Boolean(true)),
+            "false" => Ok(Value::Boolean(false)),
+            _ => Err(DefError::Runtime(format!(
+                "cannot parse param '{param_name}' value \"{raw}\" as boolean: expected true or false"
+            ))),
+        },
+        Value::DateTime(_) => {
+            use chrono::{DateTime, NaiveDate, TimeZone as _};
+            if let Ok(dt) = DateTime::parse_from_rfc3339(raw) {
+                return Ok(Value::DateTime(dt.with_timezone(&chrono::Local)));
+            }
+            if let Ok(date) = NaiveDate::parse_from_str(raw, "%Y-%m-%d") {
+                let naive_dt = date.and_hms_opt(0, 0, 0).unwrap();
+                return chrono::Local
+                    .from_local_datetime(&naive_dt)
+                    .single()
+                    .map(Value::DateTime)
+                    .ok_or_else(|| {
+                        DefError::Runtime(format!(
+                            "cannot parse param '{param_name}' value \"{raw}\" as datetime: ambiguous local time"
+                        ))
+                    });
+            }
+            Err(DefError::Runtime(format!(
+                "cannot parse param '{param_name}' value \"{raw}\" as datetime: \
+                 expected RFC3339 (2026-01-15T10:30:00+00:00) or date (2026-01-15)"
+            )))
+        }
+        _ => Err(DefError::Runtime(
+            "from_cmd_param default must be a string, integer, float, boolean, or datetime value".to_string(),
+        )),
     }
 }
 

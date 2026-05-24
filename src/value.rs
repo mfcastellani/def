@@ -14,8 +14,21 @@ pub enum Value {
     Request(RequestValue),
     RequestHandle(String),
     Response(ResponseValue),
+    Mock(MockValue),
     Uninitialized(Type),
     Nil,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct MockValue {
+    pub method: String,
+    pub url: String,
+    pub status: i64,
+    pub body: String,
+    pub headers: Vec<(String, String)>,
+    pub vars: Vec<(String, String)>,
+    pub delay_ms: u64,
+    pub configured: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Default)]
@@ -40,6 +53,7 @@ pub struct RequestValue {
     pub backoff: BackoffStrategy,
     pub timeout_ms: Option<u64>,
     pub timeout_message: Option<String>,
+    pub mocks: Vec<MockValue>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -63,6 +77,7 @@ impl Value {
             Value::Request(_) => Some(Type::Request),
             Value::RequestHandle(_) => Some(Type::Request),
             Value::Response(_) => Some(Type::Response),
+            Value::Mock(_) => Some(Type::Mock),
             Value::Uninitialized(type_annotation) => Some(type_annotation.clone()),
             Value::Nil => None,
         }

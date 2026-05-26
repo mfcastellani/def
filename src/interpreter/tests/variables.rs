@@ -1,0 +1,104 @@
+use super::*;
+
+#[test]
+fn registers_integer_variable_definition() {
+    let value = run("def i as integer\nassert(i == 0)");
+    assert_eq!(value, Value::Boolean(true));
+}
+
+#[test]
+fn registers_float_variable_definition() {
+    let value = run("def price as float\nassert(price == 0.0)");
+    assert_eq!(value, Value::Boolean(true));
+}
+
+#[test]
+fn registers_boolean_variable_definition() {
+    let value = run("def ok as boolean\nassert(ok == false)");
+    assert_eq!(value, Value::Boolean(true));
+}
+
+#[test]
+fn registers_default_values_for_each_basic_type() {
+    let value = run("def a as integer\n\
+             def b as float\n\
+             def c as string\n\
+             def d as array\n\
+             def e as boolean\n\
+             assert(a == 0 == (b == 0.0) == (c == \"\") == (d == array()) == (e == false))");
+    assert_eq!(value, Value::Boolean(true));
+}
+
+#[test]
+fn default_array_is_empty() {
+    let value = run("def items as array\nassert(items.len() == 0 == (items.is_empty() == true))");
+    assert_eq!(value, Value::Boolean(true));
+}
+
+#[test]
+fn registers_variable_definition_with_initializer() {
+    let value = run("def ok as boolean(true)\nassert(ok == true)");
+    assert_eq!(value, Value::Boolean(true));
+}
+
+#[test]
+fn registers_variable_definition_with_function_call_initializer() {
+    let value = run(
+        "def sum as function(a as integer, b as integer) (\n  a + b\n)\n\
+             def n as integer(sum(10, 12))\n\
+             assert(n == 22)",
+    );
+    assert_eq!(value, Value::Boolean(true));
+}
+
+#[test]
+fn rejects_initializer_with_wrong_type() {
+    let mut lexer = Lexer::new("def ok as boolean(10)");
+    let tokens = lexer.tokenize().unwrap();
+    let program = Parser::new(tokens).parse_program().unwrap();
+    let error = Interpreter::new().interpret(&program).unwrap_err();
+    assert!(matches!(error, DefError::Runtime(_)));
+}
+
+#[test]
+fn assigns_valid_value() {
+    let value =
+        run("def a as integer\ndef b as float\na = 10\nb = 10.5\nassert(a == 10 == (b == 10.5))");
+    assert_eq!(value, Value::Boolean(true));
+}
+
+#[test]
+fn applies_compound_assignment_to_numbers() {
+    let value = run("def a as integer(10)\n\
+             def b as float(10.5)\n\
+             a += 5\n\
+             b -= 0.5\n\
+             assert(a == 15 == (b == 10.0))");
+    assert_eq!(value, Value::Boolean(true));
+}
+
+#[test]
+fn rejects_assignment_with_wrong_type() {
+    let mut lexer = Lexer::new("def a as integer\na = \"wrong\"");
+    let tokens = lexer.tokenize().unwrap();
+    let program = Parser::new(tokens).parse_program().unwrap();
+    let error = Interpreter::new().interpret(&program).unwrap_err();
+    assert!(matches!(error, DefError::Runtime(message) if message.contains("invalid assignment")));
+}
+
+#[test]
+fn rejects_compound_assignment_for_unsupported_values() {
+    let mut lexer = Lexer::new("def name as string(\"Def\")\nname += \" language\"");
+    let tokens = lexer.tokenize().unwrap();
+    let program = Parser::new(tokens).parse_program().unwrap();
+    let error = Interpreter::new().interpret(&program).unwrap_err();
+    assert!(
+        matches!(error, DefError::Runtime(message) if message.contains("invalid compound assignment"))
+    );
+}
+
+#[test]
+fn evaluates_boolean_literal() {
+    let value = run("true");
+    assert_eq!(value, Value::Boolean(true));
+}

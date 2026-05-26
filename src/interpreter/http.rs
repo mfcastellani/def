@@ -684,14 +684,23 @@ fn execute_http_request_once(request: &RequestValue) -> DefResult<Value> {
     let response = match result {
         Ok(r) => r,
         Err(ureq::Error::Status(code, r)) => {
-            let status_text = r.status_text().to_string();
+            // HTTP error responses (4xx/5xx) are valid responses — return them so scripts
+            // can inspect res.status() and branch with if/else.
+            let headers = r
+                .headers_names()
+                .into_iter()
+                .filter_map(|name| {
+                    r.header(&name)
+                        .map(|value| (name.to_ascii_lowercase(), value.to_string()))
+                })
+                .collect();
             let body = r.into_string().unwrap_or_default();
-            let msg = if body.trim().is_empty() {
-                format!("HTTP {code} {status_text}")
-            } else {
-                format!("HTTP {code} {status_text}\n{body}")
-            };
-            return Err(DefError::Request(msg));
+            return Ok(Value::Response(ResponseValue {
+                status: i64::from(code),
+                body,
+                headers,
+                duration_ms,
+            }));
         }
         Err(ureq::Error::Transport(transport)) => {
             let msg = if let Some(ref custom) = request.timeout_message {
@@ -754,6 +763,99 @@ fn parse_backoff_ms(method: &str, args: &[Value]) -> DefResult<u64> {
     }
     Ok(ms as u64)
 }
+
+// ── JSON path helpers ─────────────────────────────────────────────────────────
+
+enum JsonPathSegment {
+    Field(String),
+    Index(usize),
+}
+
+fn parse_json_path(path: &str) -> Result<Vec<JsonPathSegment>, String> {
+    if !path.starts_with('$') {
+        return Err(format!("invalid json path '{path}'"));
+    }
+    let chars: Vec<char> = path[1..].chars().collect();
+    let mut i = 0;
+    let mut segments = Vec::new();
+    while i < chars.len() {
+        match chars[i] {
+            '.' => {
+                i += 1;
+                if i >= chars.len() || chars[i] == '.' || chars[i] == '[' {
+                    return Err(format!("invalid json path '{path}'"));
+                }
+                let mut field = String::new();
+                while i < chars.len() && chars[i] != '.' && chars[i] != '[' {
+                    let c = chars[i];
+                    if !c.is_alphanumeric() && c != '_' && c != '-' {
+                        return Err(format!("invalid json path '{path}'"));
+                    }
+                    field.push(c);
+                    i += 1;
+                }
+                segments.push(JsonPathSegment::Field(field));
+            }
+            '[' => {
+                i += 1;
+                let mut digits = String::new();
+                loop {
+                    if i >= chars.len() {
+                        return Err(format!("invalid json path '{path}'"));
+                    }
+                    match chars[i] {
+                        ']' => { i += 1; break; }
+                        c if c.is_ascii_digit() => { digits.push(c); i += 1; }
+                        _ => return Err(format!("invalid json path '{path}'")),
+                    }
+                }
+                if digits.is_empty() {
+                    return Err(format!("invalid json path '{path}'"));
+                }
+                let idx = digits
+                    .parse::<usize>()
+                    .map_err(|_| format!("invalid json path '{path}'"))?;
+                segments.push(JsonPathSegment::Index(idx));
+            }
+            _ => return Err(format!("invalid json path '{path}'")),
+        }
+    }
+    Ok(segments)
+}
+
+fn navigate_json<'a>(
+    root: &'a serde_json::Value,
+    segments: &[JsonPathSegment],
+) -> Option<&'a serde_json::Value> {
+    let mut current = root;
+    for seg in segments {
+        current = match seg {
+            JsonPathSegment::Field(name) => current.get(name.as_str())?,
+            JsonPathSegment::Index(idx) => current.get(*idx)?,
+        };
+    }
+    Some(current)
+}
+
+fn json_to_def_value(v: &serde_json::Value) -> Value {
+    match v {
+        serde_json::Value::Null => Value::Nil,
+        serde_json::Value::Bool(b) => Value::Boolean(*b),
+        serde_json::Value::Number(n) => {
+            if let Some(i) = n.as_i64() {
+                Value::Integer(i)
+            } else if let Some(f) = n.as_f64() {
+                Value::Float(f)
+            } else {
+                Value::String(n.to_string())
+            }
+        }
+        serde_json::Value::String(s) => Value::String(s.clone()),
+        other => Value::String(other.to_string()),
+    }
+}
+
+// ── response methods ──────────────────────────────────────────────────────────
 
 pub(super) fn call_response_method(
     response: ResponseValue,
@@ -959,6 +1061,42 @@ pub(super) fn call_response_method(
                 }
             }
             Ok(Value::Response(response))
+        }
+        "json" => {
+            if args.len() != 1 {
+                return Err(DefError::Runtime(format!(
+                    "response.json expects 1 argument, got {}",
+                    args.len()
+                )));
+            }
+            let Value::String(path) = &args[0] else {
+                return Err(DefError::Runtime(
+                    "response.json expects a string path argument".to_string(),
+                ));
+            };
+            let root: serde_json::Value = serde_json::from_str(&response.body)
+                .map_err(|_| DefError::Runtime("response body is not valid JSON".to_string()))?;
+            let segments = parse_json_path(path).map_err(DefError::Runtime)?;
+            let found = navigate_json(&root, &segments)
+                .ok_or_else(|| DefError::Runtime(format!("json path '{path}' not found")))?;
+            Ok(json_to_def_value(found))
+        }
+        "json_exists" => {
+            if args.len() != 1 {
+                return Err(DefError::Runtime(format!(
+                    "response.json_exists expects 1 argument, got {}",
+                    args.len()
+                )));
+            }
+            let Value::String(path) = &args[0] else {
+                return Err(DefError::Runtime(
+                    "response.json_exists expects a string path argument".to_string(),
+                ));
+            };
+            let root: serde_json::Value = serde_json::from_str(&response.body)
+                .map_err(|_| DefError::Runtime("response body is not valid JSON".to_string()))?;
+            let segments = parse_json_path(path).map_err(DefError::Runtime)?;
+            Ok(Value::Boolean(navigate_json(&root, &segments).is_some()))
         }
         _ => Err(DefError::Runtime(format!(
             "unknown response method '{name}'"

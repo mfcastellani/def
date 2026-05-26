@@ -135,6 +135,28 @@ Default values when declared without an initializer:
 
 Arithmetic operators (`+`, `-`, `*`, `/`, `%`) and compound assignments (`+=`, `-=`) work on `integer` and `float` only. String concatenation uses `concat(...)`; array mutation uses `push(...)`.
 
+### Integer and float methods
+
+Both `integer` and `float` support two methods:
+
+| Method              | Returns   | Description                                               |
+|---------------------|-----------|-----------------------------------------------------------|
+| `random(min, max)`  | same type | Random value in `[min, max]` (inclusive on both ends)     |
+| `to_string()`       | `string`  | String representation of the number (`42` → `"42"`)       |
+
+`random` accepts both integer and float arguments for `float.random`. The method is called on a default-initialized value using the empty initializer syntax:
+
+```def
+def roll   as integer().random(1, 6)     // random integer 1..6
+def prob   as float().random(0.0, 1.0)   // random float in [0.0, 1.0]
+
+def n as integer(42)
+def s as string(n.to_string())           // s == "42"
+
+def f as float(9.5)
+def t as string(f.to_string())           // t == "9.5"
+```
+
 Comparison operators:
 
 - `==` and `!=` work on any type.
@@ -362,6 +384,8 @@ print("{{res.describe_status()}} in {{res.duration()}}ms")
 | `content_type()`        | `string`   | value of the `Content-Type` response header       |
 | `header(name)`          | `string`   | value of a specific header (case-insensitive)     |
 | `headers()`             | `array`    | all headers as `tuple(name, value)` elements      |
+| `json(path)`            | `value`    | extract a value from a JSON body by path          |
+| `json_exists(path)`     | `boolean`  | true when the JSON path exists in the body        |
 | `expect(predicate)`     | `response` | assert a condition; returns self for chaining     |
 | `inspect()`             | `response` | print response details to stdout for debugging; returns self |
 
@@ -490,7 +514,7 @@ runtime error: header 'Authorization' contains unresolved template variable '{{t
 
 ### Retry and Backoff
 
-`retries(n)` re-sends the request up to `n` additional times when it fails (network error or HTTP error status). The backoff strategy controls how long to wait between attempts:
+`retries(n)` re-sends the request up to `n` additional times when it fails due to a network error (connection refused, DNS failure, timeout). HTTP error responses (4xx/5xx) are returned as valid response values and do not trigger retries — use `res.status()` or `res.ok()` to check the result. The backoff strategy controls how long to wait between attempts:
 
 ```def
 def res as response(
@@ -623,6 +647,34 @@ Options:
   --help              Show this help message
 ```
 
+## HTTP Error Responses
+
+HTTP responses with 4xx or 5xx status codes are returned as normal `response` values — they do not stop the script. The script can inspect `res.status()` and branch with `if/else`:
+
+```def
+def res as response(
+  request(POST)
+    .path("https://api.example.com/cpf")
+    .do()
+)
+
+if res.ok() {
+  print("CPF registered successfully")
+} else {
+  def status as integer(res.status())
+  print("Request failed with status: {{status}}")
+  print("Body: {{res.body()}}")
+}
+```
+
+Only **network failures** — connection refused, DNS errors, timeouts — cause a request error that stops the script. Use `retries(n)` to retry on those.
+
+| Scenario                    | Result                                      |
+|-----------------------------|---------------------------------------------|
+| 2xx response                | `Ok` — response value returned              |
+| 4xx / 5xx response          | `Ok` — response value returned; check `res.status()` |
+| Network error / timeout     | Script stops with a request error           |
+
 ## Mocks
 
 Mocks let you intercept HTTP requests and return pre-configured responses without hitting the network. They are useful for testing workflows, error scenarios, slow-server simulation, and endpoints that don't exist yet.
@@ -751,6 +803,70 @@ assert(res.header("X-Request-Id") == "abc-123")
 | `.with_var(identifier)` | Register a template variable for file templates |
 | `.delay(ms)` | Add delay in milliseconds before responding; chainable |
 
+## JSON Assertions
+
+`response.json(path)` extracts a value from a JSON response body using a simple JSONPath-like syntax. `response.json_exists(path)` checks whether a path is present, returning `false` (not an error) when it is absent.
+
+```def
+def user_mock as mock(GET, "https://api.example.com/users/1")
+  .header("Content-Type", "application/json")
+  .body_from("user.json")
+  .reply(200)
+
+def res as response(
+  request(GET)
+    .path("https://api.example.com/users/1")
+    .with_mocks(user_mock)
+    .do()
+)
+
+assert(res.json("$.id") == 1)
+assert(res.json("$.user.name") == "Marcelo")
+assert(res.json("$.items[0].active") == true)
+assert(res.json_exists("$.token") == false)
+assert(not res.json_exists("$.error"))
+```
+
+### Path syntax
+
+| Pattern        | Example              | Description                       |
+|----------------|----------------------|-----------------------------------|
+| `$`            | `$`                  | Root of the document              |
+| `$.field`      | `$.id`               | Field access                      |
+| `$.a.b`        | `$.user.name`        | Nested field access               |
+| `$.a[n]`       | `$.items[0]`         | Array element by zero-based index |
+| `$.a[n].field` | `$.users[1].email`   | Combined array and field access   |
+
+Field names accept letters, digits, `_`, and `-`. Array indices must be non-negative integers.
+
+### Return types
+
+| JSON type    | Def type                         |
+|--------------|----------------------------------|
+| string       | `string`                         |
+| integer      | `integer`                        |
+| float        | `float`                          |
+| boolean      | `boolean`                        |
+| null         | `nil`                            |
+| object/array | `string` (compact JSON)          |
+
+### Errors
+
+| Condition                      | Behaviour                                           |
+|--------------------------------|-----------------------------------------------------|
+| Body is not valid JSON         | `runtime error: response body is not valid JSON`    |
+| Path does not follow syntax    | `runtime error: invalid json path '...'`            |
+| Path not found (`json`)        | `runtime error: json path '...' not found`          |
+| Path not found (`json_exists`) | returns `false` — no error                          |
+
+### MVP limitations
+
+- No filter expressions (`[?(...)]`)
+- No wildcards (`*`)
+- No array slices (`[0:3]`)
+- No recursive descent (`..`)
+- Objects and arrays are returned as a compact JSON string
+
 ## Dry-run / Syntax Check
 
 Use `def check` to run the script in dry-run mode: the full interpreter executes, but HTTP calls return a stub `200` response instead of hitting the network. `print()` and `delay()` are suppressed. Imports are loaded and validated recursively.
@@ -826,6 +942,8 @@ The `examples/` directory is organized by topic:
 
 ```
 examples/
+├── assertions/        # json() and json_exists() assertions on response bodies
+├── brazilian_docs/    # CPF and CNPJ generators (random + to_string showcase)
 ├── language/          # control flow, imports, functions
 ├── types/             # one file per type
 ├── headers/           # .hdef usage
@@ -833,6 +951,7 @@ examples/
 ├── body/              # .jdef and .tdef usage
 ├── env/               # .edef usage
 ├── debugging/         # inspect() for request and response
+├── mocks/             # mock HTTP responses for testing
 └── jsonplaceholder/   # end-to-end workflow against a real API
 ```
 
@@ -852,6 +971,8 @@ The language core is complete and stable:
 - Error messages include line number and file name
 - Dry-run mode (`--check`) for syntax validation without execution
 - `expect(predicate)` for readable, chainable response assertions
+- `json(path)` / `json_exists(path)` for JSONPath-like assertions on response bodies
+- `random(min, max)` and `to_string()` methods on `integer` and `float`
 
 Known limitations:
 

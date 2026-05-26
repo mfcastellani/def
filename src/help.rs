@@ -51,15 +51,17 @@ pub fn print_help() {
     text("  mock           Intercept HTTP requests with pre-configured responses");
     text("  query_string   URL query parameters inline or from .qdef template files");
     text("  request        Build and execute HTTP requests with a fluent API");
+    text("  json           JSON path assertions on response bodies");
     text("  response       Inspect HTTP response status, headers, and body");
     text("  retry          Retry, backoff strategies, and per-attempt timeout");
     text("  string         Text values and string operations");
     text("  tuple          Key/value pairs used for headers and query parameters");
     println!();
     text("Aliases:");
-    text("  hdef                    → headers");
-    text("  qdef                    → query_string");
-    text("  jdef, tdef, json, text  → body");
+    text("  hdef                         → headers");
+    text("  qdef                         → query_string");
+    text("  jdef, tdef, text             → body");
+    text("  json_assertions, jsonpath    → json");
     println!();
     text("Run 'def help <topic>' for details and examples.");
     text("Run 'def help about' for information about DefLang.");
@@ -70,7 +72,7 @@ pub fn print_topic(topic: &str) {
         "about" => print_about(),
         "array" => print_array(),
         "assert" => print_assert(),
-        "body" | "jdef" | "tdef" | "json" | "text" => print_body(),
+        "body" | "jdef" | "tdef" | "text" => print_body(),
         "check" => print_check(),
         "conditionals" => print_conditionals(),
         "datetime" => print_datetime(),
@@ -78,6 +80,7 @@ pub fn print_topic(topic: &str) {
         "envvars" => print_envvars(),
         "expect" => print_expect(),
         "inspect" => print_inspect(),
+        "json" | "json_assertions" | "jsonpath" => print_json(),
         "float" => print_float(),
         "params" | "from_cmd_param" | "cmdparam" => print_params(),
         "function" => print_function(),
@@ -442,6 +445,10 @@ fn print_float() {
     text("  %    Modulo");
     text("  +=   Add and assign");
     text("  -=   Subtract and assign");
+    section("METHODS");
+    text("  random(min, max)   Return a random float in [min, max] (inclusive)");
+    text("                     Arguments may be float or integer.");
+    text("  to_string()        Convert the float to its string representation");
     section("EXAMPLE");
     text("  def price as float(19.99)");
     text("  def tax   as float(0.1)");
@@ -458,6 +465,16 @@ fn print_float() {
     println!();
     text("  assert(discounted < price)");
     text("  assert(discounted > 0.0)");
+    println!();
+    text("  // Random float in a range");
+    text("  def prob as float().random(0.0, 1.0)");
+    text("  assert(prob >= 0.0)");
+    text("  assert(prob <= 1.0)");
+    println!();
+    text("  // Convert to string");
+    text("  def f as float(9.5)");
+    text("  def s as string(f.to_string())");
+    text("  assert(s == \"9.5\")");
 }
 
 fn print_function() {
@@ -613,6 +630,9 @@ fn print_integer() {
     text("  ==   Equal          !=   Not equal");
     text("  >    Greater than   <    Less than");
     text("  >=   Greater or equal   <=   Less or equal");
+    section("METHODS");
+    text("  random(min, max)   Return a random integer in [min, max] (inclusive)");
+    text("  to_string()        Convert the integer to its string representation");
     section("EXAMPLE");
     text("  def a as integer(10)");
     text("  a += 5");
@@ -629,6 +649,16 @@ fn print_integer() {
     text("  assert(b > a)");
     text("  assert(c >= 0)");
     text("  assert(c <= 6)");
+    println!();
+    text("  // Random number in a range");
+    text("  def roll as integer().random(1, 6)");
+    text("  assert(roll >= 1)");
+    text("  assert(roll <= 6)");
+    println!();
+    text("  // Convert to string");
+    text("  def n as integer(42)");
+    text("  def s as string(n.to_string())");
+    text("  assert(s == \"42\")");
 }
 
 fn print_match() {
@@ -872,6 +902,11 @@ fn print_response() {
     text("  The value returned by request.do(). Provides access to the HTTP status,");
     text("  headers, and body. A default response (status 0, empty body) is the");
     text("  zero value when declared without an initializer.");
+    println!();
+    text("  HTTP responses with 4xx or 5xx status codes are returned as normal response");
+    text("  values — they do not stop the script. Use res.status() or res.ok() to");
+    text("  inspect the result and branch with if/else. Only network failures (connection");
+    text("  refused, DNS errors, timeouts) cause a request error that stops the script.");
     section("METHODS");
     text("  status()              HTTP status code as integer");
     text("  ok()                  True when status is 2xx");
@@ -883,6 +918,8 @@ fn print_response() {
     text("  content_type()        Value of the Content-Type response header");
     text("  header(name)          Value of a specific header (case-insensitive)");
     text("  headers()             All headers as an array of tuple(name, value)");
+    text("  json(path)            Extract a value from a JSON body by JSONPath-like path");
+    text("  json_exists(path)     True when the JSON path exists in the body");
     text("  expect(predicate)     Assert a condition; aborts with a readable error if false");
     text("  inspect()             Print response details to stdout; returns self");
     section("EXAMPLE");
@@ -908,15 +945,31 @@ fn print_response() {
     text("  // Read a specific header");
     text("  def ct as string(res.header(\"content-type\"))");
     text("  assert(ct != \"\")");
+    println!();
+    text("  // Handle HTTP error responses — script does not stop on 4xx/5xx");
+    text("  def res as response(");
+    text("    request(POST)");
+    text("      .path(\"https://api.example.com/cpf\")");
+    text("      .do()");
+    text("  )");
+    println!();
+    text("  if res.ok() (");
+    text("    print(\"registered successfully\")");
+    text("  ) else (");
+    text("    def status as integer(res.status())");
+    text("    print(\"failed with status: {{status}}\")");
+    text("    print(\"body: {{res.body()}}\")");
+    text("  )");
 }
 
 fn print_retry() {
     text("RETRY");
     section("DESCRIPTION");
     text("  Adds automatic retry and backoff to any request. retries(n) re-sends the");
-    text("  request up to n additional times when it fails (network error or HTTP error).");
-    text("  A backoff strategy controls the wait between attempts. timeout sets the");
-    text("  maximum time allowed per individual attempt.");
+    text("  request up to n additional times on network failure (connection refused,");
+    text("  DNS error, timeout). HTTP error responses (4xx/5xx) are not retried — they");
+    text("  are returned as normal response values. A backoff strategy controls the wait");
+    text("  between attempts. timeout sets the maximum time allowed per attempt.");
     section("RETRY");
     text("  .retries(n)   Re-send the request up to n times on failure. Default: 0.");
     section("BACKOFF STRATEGIES");
@@ -995,6 +1048,65 @@ fn print_string() {
     text("  // Reading from the system environment");
     text("  def home as string().from_env_var(\"HOME\")");
     text("  print(\"home: {{home}}\")");
+}
+
+fn print_json() {
+    text("JSON  (aliases: json_assertions, jsonpath)");
+    section("DESCRIPTION");
+    text("  response.json(path) extracts a value from a JSON response body using a");
+    text("  simple JSONPath-like syntax. response.json_exists(path) returns true when");
+    text("  the path exists, false otherwise — no error on missing paths.");
+    section("PATH SYNTAX");
+    text("  $                   Root of the document");
+    text("  $.field             Field access");
+    text("  $.parent.child      Nested field access");
+    text("  $.array[0]          Array element by index");
+    text("  $.array[1].field    Combined array and field access");
+    println!();
+    text("  Rules:");
+    text("  - Path must start with $");
+    text("  - Field names: letters, digits, _ and -");
+    text("  - Array indices: non-negative integers only");
+    text("  - No wildcards, filters, slices, or recursive descent (..)");
+    section("RETURN TYPES");
+    text("  JSON string   →  string");
+    text("  JSON integer  →  integer");
+    text("  JSON float    →  float");
+    text("  JSON boolean  →  boolean");
+    text("  JSON null     →  nil");
+    text("  JSON object   →  string (compact JSON representation)");
+    text("  JSON array    →  string (compact JSON representation)");
+    section("ERRORS");
+    text("  response body is not valid JSON");
+    text("  invalid json path '...'          Path does not follow the syntax rules");
+    text("  json path '...' not found        Path exists check failed in json()");
+    text("  json_exists() returns false, not an error, when the path is absent");
+    section("SYNTAX");
+    text("  res.json(\"path\")         Extract value at path (error if missing)");
+    text("  res.json_exists(\"path\")  True when path exists");
+    section("EXAMPLE");
+    text("  def m as mock(GET, \"https://api.example.com/users/1\")");
+    text("    .header(\"Content-Type\", \"application/json\")");
+    text("    .reply(200, \"{id:1}\")   // body loaded from file in real use");
+    println!();
+    text("  def res as response(");
+    text("    request(GET)");
+    text("      .path(\"https://api.example.com/users/1\")");
+    text("      .with_mocks(m)");
+    text("      .do()");
+    text("  )");
+    println!();
+    text("  assert(res.json(\"$.id\") == 1)");
+    text("  assert(res.json(\"$.active\") == true)");
+    text("  assert(res.json(\"$.address.city\") == \"São Paulo\")");
+    text("  assert(res.json(\"$.roles[0]\") == \"admin\")");
+    println!();
+    text("  assert(res.json_exists(\"$.id\"))");
+    text("  assert(not res.json_exists(\"$.missing\"))");
+    section("SEE ALSO");
+    text("  def help response  Full list of response methods");
+    text("  def help assert    Global assert() builtin");
+    text("  def help mock      Intercept HTTP requests with pre-configured responses");
 }
 
 fn print_expect() {

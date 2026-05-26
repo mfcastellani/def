@@ -1,0 +1,64 @@
+// CNPJ Generator
+// Generates a random valid Brazilian CNPJ (Cadastro Nacional de Pessoas Jurídicas).
+//
+// Structure: XX.XXX.XXX/XXXX-DD
+//   d1..d8  – company number (random)
+//   d9..d12 – branch number (fixed as 0001 = headquarters)
+//   d13..d14 – check digits
+//
+// Check digit algorithm (weights repeat after 9):
+//   d13: weights [5,4,3,2,9,8,7,6,5,4,3,2] over d1..d12
+//   d14: weights [6,5,4,3,2,9,8,7,6,5,4,3,2] over d1..d13
+//   remainder = sum % 11  →  if < 2 then 0, else 11 - remainder
+
+// ── 8 random company digits ───────────────────────────────────────────────────
+
+def d1 as integer().random(0, 9)
+def d2 as integer().random(0, 9)
+def d3 as integer().random(0, 9)
+def d4 as integer().random(0, 9)
+def d5 as integer().random(0, 9)
+def d6 as integer().random(0, 9)
+def d7 as integer().random(0, 9)
+def d8 as integer().random(0, 9)
+
+// ── branch: 0001 (fixed) ─────────────────────────────────────────────────────
+
+def d9  as integer(0)
+def d10 as integer(0)
+def d11 as integer(0)
+def d12 as integer(1)
+
+// ── first check digit (d13) ──────────────────────────────────────────────────
+
+def sum1 as integer(
+  d1*5 + d2*4 + d3*3 + d4*2 + d5*9 + d6*8 + d7*7 + d8*6 + d9*5 + d10*4 + d11*3 + d12*2
+)
+def r1  as integer(sum1 % 11)
+def d13 as integer(0)
+if r1 >= 2 (
+  d13 = 11 - r1
+)
+
+// ── second check digit (d14) ─────────────────────────────────────────────────
+
+def sum2 as integer(
+  d1*6 + d2*5 + d3*4 + d4*3 + d5*2 + d6*9 + d7*8 + d8*7 + d9*6 + d10*5 + d11*4 + d12*3 + d13*2
+)
+def r2  as integer(sum2 % 11)
+def d14 as integer(0)
+if r2 >= 2 (
+  d14 = 11 - r2
+)
+
+// ── format: XX.XXX.XXX/XXXX-DD ───────────────────────────────────────────────
+
+def cnpj as string(concat(
+  d1.to_string(), d2.to_string(), ".",
+  d3.to_string(), d4.to_string(), d5.to_string(), ".",
+  d6.to_string(), d7.to_string(), d8.to_string(), "/",
+  d9.to_string(), d10.to_string(), d11.to_string(), d12.to_string(), "-",
+  d13.to_string(), d14.to_string()
+))
+
+print("CNPJ: {{cnpj}}")

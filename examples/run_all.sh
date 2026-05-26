@@ -10,7 +10,7 @@ if [[ "${1:-}" == "--skip-http" ]]; then
 fi
 
 local_examples=(
-  "examples/language/assert.def"
+  "examples/assertions/assert.def"
   "examples/language/conditionals.def"
   "examples/language/delay.def"
   "examples/language/imported-math.def"
@@ -25,6 +25,10 @@ local_examples=(
   "examples/types/tuple.def"
   "examples/env/request_env.def"
   "examples/mocks/basic_mock.def"
+  "examples/language/error_handling.def"
+  "examples/assertions/json_assertions.def"
+  "examples/brazilian_docs/cpf.def"
+  "examples/brazilian_docs/cnpj.def"
 )
 
 http_examples=(

@@ -30,10 +30,10 @@ use functions::request_value_from_initializer;
 use http::{apply_request_method, call_response_method, new_request_value, RequestMethodResult};
 use mock::call_mock_method;
 use values::{
-    apply_assignment_operator, call_string_method, coerce_assignment, coerce_value_to_type,
-    default_value_for_type, evaluate_boolean_binary, evaluate_numeric_binary,
-    evaluate_numeric_comparison, evaluate_unary, is_valid_tuple_value, pattern_matches,
-    printable_value,
+    apply_assignment_operator, call_float_method, call_integer_method, call_string_method,
+    coerce_assignment, coerce_value_to_type, default_value_for_type, evaluate_boolean_binary,
+    evaluate_numeric_binary, evaluate_numeric_comparison, evaluate_unary, is_valid_tuple_value,
+    pattern_matches, printable_value,
 };
 
 pub(crate) use values::resolve_import_path;
@@ -663,9 +663,11 @@ impl Interpreter {
             Value::Tuple { key, value } => call_tuple_method(key, *value, name, values),
             Value::DateTime(value) => call_datetime_method(value, name, values),
             Value::String(s) => call_string_method(&s, name, values),
+            Value::Integer(n) => call_integer_method(n, name, values),
+            Value::Float(f) => call_float_method(f, name, values),
             Value::Mock(mock) => call_mock_method(mock, name, values, &self.base_dir),
             _ => Err(DefError::Runtime(format!(
-                "member function '{name}' is only available on request, response, array, tuple, datetime, string or mock values"
+                "member function '{name}' is only available on request, response, array, tuple, datetime, string, integer, float or mock values"
             ))),
         }
     }

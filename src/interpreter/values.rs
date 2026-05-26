@@ -6,6 +6,96 @@ use chrono::Local;
 
 use crate::value::{ResponseValue, Value};
 
+pub(super) fn call_integer_method(n: i64, name: &str, args: Vec<Value>) -> DefResult<Value> {
+    match name {
+        "random" => {
+            if args.len() != 2 {
+                return Err(DefError::Runtime(format!(
+                    "integer.random expects 2 arguments (min, max), got {}",
+                    args.len()
+                )));
+            }
+            let min = match &args[0] {
+                Value::Integer(v) => *v,
+                _ => return Err(DefError::Runtime(
+                    "integer.random expects integer arguments".to_string(),
+                )),
+            };
+            let max = match &args[1] {
+                Value::Integer(v) => *v,
+                _ => return Err(DefError::Runtime(
+                    "integer.random expects integer arguments".to_string(),
+                )),
+            };
+            if min > max {
+                return Err(DefError::Runtime(format!(
+                    "integer.random: min ({min}) must be <= max ({max})"
+                )));
+            }
+            use rand::Rng;
+            Ok(Value::Integer(rand::thread_rng().gen_range(min..=max)))
+        }
+        "to_string" => {
+            if !args.is_empty() {
+                return Err(DefError::Runtime(format!(
+                    "integer.to_string expects 0 arguments, got {}",
+                    args.len()
+                )));
+            }
+            Ok(Value::String(n.to_string()))
+        }
+        _ => Err(DefError::Runtime(format!(
+            "undefined integer method '{name}'"
+        ))),
+    }
+}
+
+pub(super) fn call_float_method(f: f64, name: &str, args: Vec<Value>) -> DefResult<Value> {
+    match name {
+        "random" => {
+            if args.len() != 2 {
+                return Err(DefError::Runtime(format!(
+                    "float.random expects 2 arguments (min, max), got {}",
+                    args.len()
+                )));
+            }
+            let min = match &args[0] {
+                Value::Float(v) => *v,
+                Value::Integer(v) => *v as f64,
+                _ => return Err(DefError::Runtime(
+                    "float.random expects numeric arguments".to_string(),
+                )),
+            };
+            let max = match &args[1] {
+                Value::Float(v) => *v,
+                Value::Integer(v) => *v as f64,
+                _ => return Err(DefError::Runtime(
+                    "float.random expects numeric arguments".to_string(),
+                )),
+            };
+            if min > max {
+                return Err(DefError::Runtime(format!(
+                    "float.random: min ({min}) must be <= max ({max})"
+                )));
+            }
+            use rand::Rng;
+            Ok(Value::Float(rand::thread_rng().gen_range(min..=max)))
+        }
+        "to_string" => {
+            if !args.is_empty() {
+                return Err(DefError::Runtime(format!(
+                    "float.to_string expects 0 arguments, got {}",
+                    args.len()
+                )));
+            }
+            Ok(Value::String(f.to_string()))
+        }
+        _ => Err(DefError::Runtime(format!(
+            "undefined float method '{name}'"
+        ))),
+    }
+}
+
 pub(super) fn call_string_method(s: &str, name: &str, args: Vec<Value>) -> DefResult<Value> {
     match name {
         "from_env_var" => {

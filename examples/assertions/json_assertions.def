@@ -1,0 +1,50 @@
+// JSON assertions example
+// Demonstrates response.json(path) and response.json_exists(path) for
+// testing API responses without writing body-parsing boilerplate.
+
+// Mock a user endpoint that returns a JSON body loaded from a file.
+def user_mock as mock(GET, "https://api.example.com/users/1")
+  .header("Content-Type", "application/json")
+  .body_from("data/user.json")
+  .reply(200)
+
+def res as response(
+  request(GET)
+    .path("https://api.example.com/users/1")
+    .with_mocks(user_mock)
+    .do()
+)
+
+// Simple field assertions
+assert(res.json("$.id") == 1)
+assert(res.json("$.name") == "Marcelo")
+assert(res.json("$.active") == true)
+
+// Float value
+assert(res.json("$.score") == 9.5)
+
+// Nested field access
+assert(res.json("$.address.city") == "São Paulo")
+
+// Array index access
+assert(res.json("$.roles[0]") == "admin")
+assert(res.json("$.roles[1]") == "user")
+
+// Existence checks
+assert(res.json_exists("$.id"))
+assert(res.json_exists("$.address.city"))
+assert(res.json_exists("$.roles[0]"))
+assert(not res.json_exists("$.missing"))
+assert(not res.json_exists("$.address.zip"))
+
+// Store values in variables to print them
+def user_id as integer(res.json("$.id"))
+def user_name as string(res.json("$.name"))
+def user_city as string(res.json("$.address.city"))
+def first_role as string(res.json("$.roles[0]"))
+
+print("id:         {{user_id}}")
+print("name:       {{user_name}}")
+print("city:       {{user_city}}")
+print("first role: {{first_role}}")
+print("all json assertions passed")

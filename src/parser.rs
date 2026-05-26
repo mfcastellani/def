@@ -125,7 +125,11 @@ impl Parser {
             {
                 self.advance();
                 if self.check(&Token::Dot) {
-                    let base = Expression::String(String::new());
+                    let base = match type_annotation {
+                        Type::Integer => Expression::Integer(0),
+                        Type::Float => Expression::Float(0.0),
+                        _ => Expression::String(String::new()),
+                    };
                     let expression = self.parse_postfix_expression(base)?;
                     return Ok(Statement::VariableDefinition(VariableDefinition {
                         name,

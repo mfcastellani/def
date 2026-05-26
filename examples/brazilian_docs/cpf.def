@@ -1,0 +1,49 @@
+// CPF Generator
+// Generates a random valid Brazilian CPF (Cadastro de Pessoas Físicas).
+//
+// Structure: XXX.XXX.XXX-DD  (9 base digits + 2 check digits)
+//
+// Check digit algorithm:
+//   d10: sum(d1*10 + d2*9 + ... + d9*2) % 11 → if < 2 then 0, else 11 - remainder
+//   d11: sum(d1*11 + d2*10 + ... + d10*2) % 11 → same rule
+
+// ── 9 random base digits ──────────────────────────────────────────────────────
+
+def d1 as integer().random(0, 9)
+def d2 as integer().random(0, 9)
+def d3 as integer().random(0, 9)
+def d4 as integer().random(0, 9)
+def d5 as integer().random(0, 9)
+def d6 as integer().random(0, 9)
+def d7 as integer().random(0, 9)
+def d8 as integer().random(0, 9)
+def d9 as integer().random(0, 9)
+
+// ── first check digit (d10) ───────────────────────────────────────────────────
+
+def sum1 as integer(d1*10 + d2*9 + d3*8 + d4*7 + d5*6 + d6*5 + d7*4 + d8*3 + d9*2)
+def r1   as integer(sum1 % 11)
+def d10  as integer(0)
+if r1 >= 2 (
+  d10 = 11 - r1
+)
+
+// ── second check digit (d11) ──────────────────────────────────────────────────
+
+def sum2 as integer(d1*11 + d2*10 + d3*9 + d4*8 + d5*7 + d6*6 + d7*5 + d8*4 + d9*3 + d10*2)
+def r2   as integer(sum2 % 11)
+def d11  as integer(0)
+if r2 >= 2 (
+  d11 = 11 - r2
+)
+
+// ── format: XXX.XXX.XXX-DD ───────────────────────────────────────────────────
+
+def cpf as string(concat(
+  d1.to_string(), d2.to_string(), d3.to_string(), ".",
+  d4.to_string(), d5.to_string(), d6.to_string(), ".",
+  d7.to_string(), d8.to_string(), d9.to_string(), "-",
+  d10.to_string(), d11.to_string()
+))
+
+print("CPF: {{cpf}}")

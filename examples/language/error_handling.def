@@ -1,0 +1,70 @@
+// HTTP error handling
+// HTTP responses with 4xx/5xx status codes are returned as valid response
+// values. The script can inspect res.status() and branch with if/else.
+// Only network failures (connection refused, timeout, DNS errors) cause
+// a request error that stops the script.
+
+// Simulate a conflict response (e.g. "CPF already registered")
+def conflict_mock as mock(POST, "https://api.example.com/cpf").fail(
+  409,
+  "CPF already registered"
+)
+
+def res as response(
+  request(POST)
+    .path("https://api.example.com/cpf")
+    .with_mocks(conflict_mock)
+    .do()
+)
+
+// Check status and branch — the script does NOT die on 409
+if res.ok() (
+  print("CPF registered successfully")
+) else (
+  def status as integer(res.status())
+  print("Request failed with status: {{status}}")
+  print("Body: {{res.body()}}")
+)
+
+// Simulate a not-found response
+def not_found_mock as mock(GET, "https://api.example.com/users/999").fail(
+  404,
+  "user not found"
+)
+
+def user_res as response(
+  request(GET)
+    .path("https://api.example.com/users/999")
+    .with_mocks(not_found_mock)
+    .do()
+)
+
+if user_res.status() == 404 (
+  print("User not found (404) — handled gracefully")
+) else (
+  def user_status as integer(user_res.status())
+  print("Unexpected status: {{user_status}}")
+)
+
+// Simulate a server error
+def server_error_mock as mock(GET, "https://api.example.com/data").fail(
+  500,
+  "internal server error"
+)
+
+def data_res as response(
+  request(GET)
+    .path("https://api.example.com/data")
+    .with_mocks(server_error_mock)
+    .do()
+)
+
+def data_status as integer(data_res.status())
+
+if data_res.status() >= 500 (
+  print("Server error {{data_status}} — would retry or abort")
+) else (
+  print("Got data: {{data_res.body()}}")
+)
+
+print("Script completed — all error responses handled")

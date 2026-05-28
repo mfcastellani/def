@@ -36,6 +36,7 @@ pub fn print_help() {
     text("  body           Request bodies from .jdef (JSON) and .tdef (text) template files");
     text("  check          Validate syntax without executing (dry-run mode)");
     text("  conditionals   if/else control flow with block scope");
+    text("  loops          for and while do loops with break() and next()");
     text("  datetime       Current date and time with formatting and individual part access");
     text("  delay          Pause execution for a given number of milliseconds");
     text("  envvars        Load environment variable defaults from .edef files");
@@ -75,6 +76,7 @@ pub fn print_topic(topic: &str) {
         "body" | "jdef" | "tdef" | "text" => print_body(),
         "check" => print_check(),
         "conditionals" => print_conditionals(),
+        "loops" | "while" | "for" => print_loops(),
         "datetime" => print_datetime(),
         "delay" => print_delay(),
         "envvars" => print_envvars(),
@@ -315,6 +317,66 @@ fn print_conditionals() {
     text("  ) else (");
     text("    print(\"failure: {{res.describe_status()}}\")");
     text("  )");
+}
+
+fn print_loops() {
+    text("LOOPS");
+    section("DESCRIPTION");
+    text("  DefLang has two loop constructs: for (collection iteration) and while do");
+    text("  (condition-based repetition). Both support break() to exit early and next()");
+    text("  to skip the rest of the current iteration. Both loops create a local scope:");
+    text("  variables declared with def inside a loop body are not visible outside it.");
+    section("FOR — iterate over a collection");
+    text("  for <variable> in <array> (");
+    text("    // body — variable is bound to each element");
+    text("  )");
+    println!();
+    text("  def items as array(10, 20, 30)");
+    text("  def total as integer(0)");
+    text("  for item in items (");
+    text("    total += item");
+    text("  )");
+    text("  assert(total == 60)");
+    section("WHILE DO — repeat while a condition is true");
+    text("  while <boolean expression> do (");
+    text("    // body — runs as long as condition is true");
+    text("  )");
+    println!();
+    text("  def i as integer(1)");
+    text("  def sum as integer(0)");
+    text("  while i <= 100 do (");
+    text("    sum += i");
+    text("    i += 1");
+    text("  )");
+    text("  assert(sum == 5050)");
+    section("BREAK — exit the loop immediately");
+    text("  break() stops the current loop and resumes after its closing ).");
+    println!();
+    text("  def n as integer(0)");
+    text("  while true do (");
+    text("    n += 1");
+    text("    if n == 5 (");
+    text("      break()");
+    text("    )");
+    text("  )");
+    text("  assert(n == 5)");
+    section("NEXT — skip the rest of the current iteration");
+    text("  next() jumps to the next iteration, skipping remaining statements in the body.");
+    println!();
+    text("  def items as array(1, 2, 3, 4, 5)");
+    text("  def evens as array");
+    text("  for item in items (");
+    text("    if item % 2 != 0 (");
+    text("      next()");
+    text("    )");
+    text("    evens.push(item)");
+    text("  )");
+    text("  assert(evens.len() == 2)");
+    section("NOTES");
+    text("  · break() and next() take no arguments.");
+    text("  · Calling break() or next() outside a loop is a runtime error.");
+    text("  · Calling break() or next() inside a user function called from a loop");
+    text("    is a runtime error — they do not propagate across function boundaries.");
 }
 
 fn print_datetime() {

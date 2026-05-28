@@ -1,0 +1,13 @@
+// Fibonacci sequence — F(0) through F(89)
+
+def a as integer(0)
+def b as integer(1)
+def i as integer(0)
+
+while i < 90 do (
+  print("F({{i}}) = {{a}}")
+  def tmp as integer(a + b)
+  a = b
+  b = tmp
+  i += 1
+)

@@ -6,6 +6,8 @@ pub enum DefError {
     Parse(String),
     Runtime(String),
     Request(String),
+    LoopBreak, // internal signal: break() was called inside a loop body
+    LoopNext,  // internal signal: next() was called inside a loop body
 }
 
 impl fmt::Display for DefError {
@@ -15,6 +17,8 @@ impl fmt::Display for DefError {
             DefError::Parse(message) => write!(f, "parser error: {message}"),
             DefError::Runtime(message) => write!(f, "runtime error: {message}"),
             DefError::Request(message) => write!(f, "request error: {message}"),
+            DefError::LoopBreak => write!(f, "runtime error: break() called outside of a loop"),
+            DefError::LoopNext => write!(f, "runtime error: next() called outside of a loop"),
         }
     }
 }
@@ -28,6 +32,7 @@ impl DefError {
             DefError::Parse(msg) => DefError::Parse(format!("{msg} in '{file}'")),
             DefError::Runtime(msg) => DefError::Runtime(format!("{msg} in '{file}'")),
             DefError::Request(msg) => DefError::Request(format!("{msg} in '{file}'")),
+            other => other,
         }
     }
 

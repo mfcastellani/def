@@ -1,6 +1,129 @@
 use super::*;
 
 #[test]
+fn while_loop_counts_to_target() {
+    let value = run(
+        "def n as integer(0)\n\
+         while n < 5 do (\n\
+           n += 1\n\
+         )\n\
+         assert(n == 5)",
+    );
+    assert_eq!(value, Value::Boolean(true));
+}
+
+#[test]
+fn while_loop_skips_body_when_condition_false() {
+    let value = run(
+        "def n as integer(0)\n\
+         while false do (\n\
+           n += 1\n\
+         )\n\
+         assert(n == 0)",
+    );
+    assert_eq!(value, Value::Boolean(true));
+}
+
+#[test]
+fn while_condition_must_be_boolean() {
+    let error = interpret_error("while 1 do (\nprint(\"bad\")\n)", ".");
+    assert!(
+        matches!(error, DefError::Runtime(message) if message.contains("condition must evaluate to boolean"))
+    );
+}
+
+#[test]
+fn break_exits_while_loop_early() {
+    let value = run(
+        "def n as integer(0)\n\
+         while true do (\n\
+           if n == 3 (\n\
+             break()\n\
+           )\n\
+           n += 1\n\
+         )\n\
+         assert(n == 3)",
+    );
+    assert_eq!(value, Value::Boolean(true));
+}
+
+#[test]
+fn next_skips_rest_of_while_iteration() {
+    let value = run(
+        "def n as integer(0)\n\
+         def count as integer(0)\n\
+         while n < 5 do (\n\
+           n += 1\n\
+           if n == 3 (\n\
+             next()\n\
+           )\n\
+           count += 1\n\
+         )\n\
+         assert(count == 4)",
+    );
+    assert_eq!(value, Value::Boolean(true));
+}
+
+#[test]
+fn break_exits_for_loop_early() {
+    let value = run(
+        "def items as array(1, 2, 3, 4, 5)\n\
+         def total as integer(0)\n\
+         for item in items (\n\
+           if item == 3 (\n\
+             break()\n\
+           )\n\
+           total += item\n\
+         )\n\
+         assert(total == 3)",
+    );
+    assert_eq!(value, Value::Boolean(true));
+}
+
+#[test]
+fn next_skips_rest_of_for_iteration() {
+    let value = run(
+        "def items as array(1, 2, 3, 4, 5)\n\
+         def total as integer(0)\n\
+         for item in items (\n\
+           if item == 3 (\n\
+             next()\n\
+           )\n\
+           total += item\n\
+         )\n\
+         assert(total == 12)",
+    );
+    assert_eq!(value, Value::Boolean(true));
+}
+
+#[test]
+fn break_outside_loop_errors() {
+    let error = interpret_error("break()", ".");
+    assert!(
+        matches!(&error, DefError::Runtime(msg) if msg.contains("break() called outside of a loop")),
+        "unexpected error: {error:?}"
+    );
+}
+
+#[test]
+fn next_outside_loop_errors() {
+    let error = interpret_error("next()", ".");
+    assert!(
+        matches!(&error, DefError::Runtime(msg) if msg.contains("next() called outside of a loop")),
+        "unexpected error: {error:?}"
+    );
+}
+
+#[test]
+fn break_with_args_errors() {
+    let error = interpret_error("while true do (\nbreak(1)\n)", ".");
+    assert!(
+        matches!(&error, DefError::Runtime(msg) if msg.contains("break() takes no arguments")),
+        "unexpected error: {error:?}"
+    );
+}
+
+#[test]
 fn if_executes_then_or_else_branch() {
     let value = run("def status as integer(200)\n\
              def message as string()\n\

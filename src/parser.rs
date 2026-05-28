@@ -1,7 +1,7 @@
 use crate::ast::{
     Assignment, AssignmentOperator, AssignmentTarget, BinaryOperator, EnvVarsLoad, Expression,
     ForLoop, FunctionDefinition, IfStatement, ImportDefinition, MatchArm, MatchPattern, Parameter,
-    Program, Statement, Stmt, Type, UnaryOperator, VariableDefinition,
+    Program, Statement, Stmt, Type, UnaryOperator, VariableDefinition, WhileLoop,
 };
 use crate::error::{DefError, DefResult};
 use crate::lexer::Token;
@@ -51,6 +51,10 @@ impl Parser {
 
         if self.matches(&Token::For) {
             return self.parse_for_loop();
+        }
+
+        if self.matches(&Token::While) {
+            return self.parse_while_loop();
         }
 
         if self.matches(&Token::If) {
@@ -214,6 +218,17 @@ impl Parser {
             iterable,
             body,
         }))
+    }
+
+    fn parse_while_loop(&mut self) -> DefResult<Statement> {
+        let condition = self.parse_block_header_expression()?;
+        self.skip_newlines();
+        self.consume(&Token::Do, "expected 'do' after while condition")?;
+        self.skip_newlines();
+        self.consume(&Token::LeftParen, "expected '(' before while body")?;
+        let body = self.parse_statement_block_until_right_paren("while body")?;
+
+        Ok(Statement::WhileLoop(WhileLoop { condition, body }))
     }
 
     fn parse_if_statement(&mut self) -> DefResult<Statement> {
@@ -570,7 +585,7 @@ impl Parser {
             let before_newlines = self.position;
             self.skip_newlines();
             if self.matches(&Token::Dot) {
-                let member = self.consume_identifier("expected member name after '.'")?;
+                let member = self.consume_member_name()?;
                 expression = if self.matches(&Token::LeftParen) {
                     let args = self.parse_call_arguments()?;
                     Expression::MemberFunctionCall {
@@ -733,6 +748,7 @@ impl Parser {
             self.token_at(position),
             Some(Token::Def)
                 | Some(Token::For)
+                | Some(Token::While)
                 | Some(Token::If)
                 | Some(Token::Identifier(_))
                 | Some(Token::TypeArray)
@@ -782,6 +798,18 @@ impl Parser {
             Token::Identifier(name) => Ok(name),
             token => Err(DefError::Parse(format!(
                 "{message} at line {}, found {token:?}",
+                self.current_line
+            ))),
+        }
+    }
+
+    // Like consume_identifier but also accepts contextual keywords that can be method names.
+    fn consume_member_name(&mut self) -> DefResult<String> {
+        match self.advance() {
+            Token::Identifier(name) => Ok(name),
+            Token::Do => Ok("do".to_string()),
+            token => Err(DefError::Parse(format!(
+                "expected member name after '.' at line {}, found {token:?}",
                 self.current_line
             ))),
         }

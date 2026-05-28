@@ -30,6 +30,18 @@ impl Interpreter {
         if name == "from_cmd_param" {
             return self.call_from_cmd_param(args, scopes);
         }
+        if name == "break" {
+            if !args.is_empty() {
+                return Err(DefError::Runtime("break() takes no arguments".to_string()));
+            }
+            return Err(DefError::LoopBreak);
+        }
+        if name == "next" {
+            if !args.is_empty() {
+                return Err(DefError::Runtime("next() takes no arguments".to_string()));
+            }
+            return Err(DefError::LoopNext);
+        }
 
         let function = self
             .functions
@@ -82,7 +94,17 @@ impl Interpreter {
         let mut function_scopes = vec![function_scope];
         let mut last_value = Value::Nil;
         for stmt in &function.body {
-            last_value = self.execute_statement(&stmt.inner, &mut function_scopes)?;
+            last_value = self
+                .execute_statement(&stmt.inner, &mut function_scopes)
+                .map_err(|e| match e {
+                    DefError::LoopBreak => DefError::Runtime(
+                        "break() called outside of a loop".to_string(),
+                    ),
+                    DefError::LoopNext => DefError::Runtime(
+                        "next() called outside of a loop".to_string(),
+                    ),
+                    other => other,
+                })?;
         }
 
         Ok(last_value)

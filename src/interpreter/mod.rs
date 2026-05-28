@@ -7,7 +7,7 @@ use std::{
 use crate::ast::{
     AssignmentOperator, AssignmentTarget, BinaryOperator, EnvVarsLoad, Expression, ForLoop,
     FunctionDefinition, IfStatement, ImportDefinition, MatchArm, Program, Statement, Stmt, Type,
-    UnaryOperator, VariableDefinition,
+    UnaryOperator, VariableDefinition, WhileLoop,
 };
 use crate::error::{DefError, DefResult};
 use crate::lexer::Lexer;
@@ -100,12 +100,15 @@ impl Interpreter {
         for stmt in &program.statements {
             last_value = self
                 .execute_statement(&stmt.inner, &mut scopes)
-                .map_err(|e| {
-                    if self.source_file.is_empty() {
-                        e
-                    } else {
-                        e.at_location(stmt.line, &self.source_file)
+                .map_err(|e| match e {
+                    DefError::LoopBreak => {
+                        DefError::Runtime("break() called outside of a loop".to_string())
                     }
+                    DefError::LoopNext => {
+                        DefError::Runtime("next() called outside of a loop".to_string())
+                    }
+                    e if self.source_file.is_empty() => e,
+                    e => e.at_location(stmt.line, &self.source_file),
                 })?;
         }
 
@@ -140,6 +143,7 @@ impl Interpreter {
                 Ok(Value::Nil)
             }
             Statement::ForLoop(for_loop) => self.execute_for_loop(for_loop, scopes),
+            Statement::WhileLoop(while_loop) => self.execute_while_loop(while_loop, scopes),
             Statement::IfStatement(if_statement) => self.execute_if_statement(if_statement, scopes),
             Statement::FunctionDefinition(function) => {
                 self.functions
@@ -262,12 +266,66 @@ impl Interpreter {
 
         let mut last_value = Value::Nil;
 
-        for item in items {
+        'outer: for item in items {
             scopes.push(HashMap::from([(for_loop.variable.clone(), item)]));
             for stmt in &for_loop.body {
-                last_value = self.execute_statement(&stmt.inner, scopes)?;
+                match self.execute_statement(&stmt.inner, scopes) {
+                    Ok(v) => last_value = v,
+                    Err(DefError::LoopBreak) => {
+                        scopes.pop();
+                        break 'outer;
+                    }
+                    Err(DefError::LoopNext) => break,
+                    Err(e) => {
+                        scopes.pop();
+                        return Err(e);
+                    }
+                }
             }
             scopes.pop();
+        }
+
+        Ok(last_value)
+    }
+
+    fn execute_while_loop(
+        &mut self,
+        while_loop: &WhileLoop,
+        scopes: &mut ScopeStack,
+    ) -> DefResult<Value> {
+        let mut last_value = Value::Nil;
+
+        loop {
+            let condition = self.evaluate_expression(&while_loop.condition, scopes)?;
+            let Value::Boolean(condition) = condition else {
+                return Err(DefError::Runtime(
+                    "while condition must evaluate to boolean".to_string(),
+                ));
+            };
+            if !condition {
+                break;
+            }
+
+            scopes.push(HashMap::new());
+            let mut break_loop = false;
+            for stmt in &while_loop.body {
+                match self.execute_statement(&stmt.inner, scopes) {
+                    Ok(v) => last_value = v,
+                    Err(DefError::LoopBreak) => {
+                        break_loop = true;
+                        break;
+                    }
+                    Err(DefError::LoopNext) => break,
+                    Err(e) => {
+                        scopes.pop();
+                        return Err(e);
+                    }
+                }
+            }
+            scopes.pop();
+            if break_loop {
+                break;
+            }
         }
 
         Ok(last_value)

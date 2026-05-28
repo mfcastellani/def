@@ -22,6 +22,7 @@ pub enum Statement {
     EnvVarsLoad(EnvVarsLoad),
     Assignment(Assignment),
     ForLoop(ForLoop),
+    WhileLoop(WhileLoop),
     IfStatement(IfStatement),
     FunctionDefinition(FunctionDefinition),
     Expression(Expression),
@@ -31,6 +32,12 @@ pub enum Statement {
 pub struct ForLoop {
     pub variable: String,
     pub iterable: Expression,
+    pub body: Vec<Stmt>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct WhileLoop {
+    pub condition: Expression,
     pub body: Vec<Stmt>,
 }
 

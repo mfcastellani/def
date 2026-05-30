@@ -42,7 +42,7 @@ cargo run -- run examples/types/integer.def
 
 - **Typed variables** — `integer`, `float`, `string`, `boolean`, `array`, `tuple`, `datetime`
 - **Fluent HTTP client** — build requests with `.path()`, `.header()`, `.body_from()`, `.do()`; inspect responses with `.status()`, `.json()`, `.expect()`
-- **Control flow** — `if`/`else`, `for`, `while do`, `match`, user-defined functions
+- **Control flow** — `if`/`else`, `for`, `while do`, `match`, user-defined functions; `range(1..10)` for integer ranges
 - **Retry and backoff** — `retries(n)` with `fixed`, `linear`, or `exponential` backoff and per-attempt `timeout`
 - **Mocks** — intercept HTTP calls with pre-configured responses for testing and offline workflows
 - **File templates** — `.hdef` (headers), `.qdef` (query strings), `.jdef` (JSON body), `.tdef` (text body) with `{{variable}}` substitution

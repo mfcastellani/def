@@ -30,6 +30,9 @@ impl Interpreter {
         if name == "from_cmd_param" {
             return self.call_from_cmd_param(args, scopes);
         }
+        if name == "range" {
+            return self.call_range(args, scopes);
+        }
         if name == "break" {
             if !args.is_empty() {
                 return Err(DefError::Runtime("break() takes no arguments".to_string()));
@@ -294,6 +297,41 @@ impl Interpreter {
                 "required param '{param_name}' not provided — pass --param {param_name}=<value>"
             ))),
         }
+    }
+
+    fn call_range(&mut self, args: &[Expression], scopes: &mut ScopeStack) -> DefResult<Value> {
+        if args.len() != 1 {
+            return Err(DefError::Runtime(format!(
+                "range expects 1 argument, got {}",
+                args.len()
+            )));
+        }
+
+        let Expression::Range { start, end } = &args[0] else {
+            return Err(DefError::Runtime(
+                "range expects a range expression like range(1..5)".to_string(),
+            ));
+        };
+
+        let start_val = self.evaluate_expression(start, scopes)?;
+        let end_val = self.evaluate_expression(end, scopes)?;
+
+        let (Value::Integer(start_int), Value::Integer(end_int)) = (start_val, end_val) else {
+            return Err(DefError::Runtime(
+                "range bounds must be integers".to_string(),
+            ));
+        };
+
+        let end_exclusive = end_int + 1;
+
+        if start_int > end_exclusive {
+            return Err(DefError::Runtime(format!(
+                "range start ({start_int}) must not be greater than end ({end_int})"
+            )));
+        }
+
+        let items = (start_int..end_exclusive).map(Value::Integer).collect();
+        Ok(Value::Array(items))
     }
 }
 

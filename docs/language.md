@@ -238,6 +238,24 @@ for item in items (
 assert(total == 60)
 ```
 
+### range — generate an array of consecutive integers
+
+`range(start..end)` produces an inclusive `[start, end]` array of integers:
+
+```def
+def total as integer(0)
+for n in range(1..10) (
+  total += n
+)
+assert(total == 55)
+
+def nums as array
+nums = range(1..5)   // [1, 2, 3, 4, 5]
+assert(nums.len() == 5)
+```
+
+Both bounds must be integers and `end` must be `>= start`. Bounds can be any integer expression, including variables.
+
 ### while do — repeat while a condition is true
 
 ```def

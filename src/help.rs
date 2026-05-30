@@ -32,6 +32,7 @@ pub fn print_help() {
     println!();
     text("Topics:");
     text("  array          Ordered collection of values with indexed access and iteration");
+    text("  range          Generate an array of consecutive integers with range(start..end)");
     text("  assert         Abort execution when a boolean expression is false");
     text("  body           Request bodies from .jdef (JSON) and .tdef (text) template files");
     text("  check          Validate syntax without executing (dry-run mode)");
@@ -72,6 +73,7 @@ pub fn print_topic(topic: &str) {
     match topic {
         "about" => print_about(),
         "array" => print_array(),
+        "range" => print_range(),
         "assert" => print_assert(),
         "body" | "jdef" | "tdef" | "text" => print_body(),
         "check" => print_check(),
@@ -208,6 +210,43 @@ fn print_array() {
     text("  assert(names.len() == 4)");
     text("  assert(names[0] == \"Marcelo\")");
     text("  assert(names.is_empty() == false)");
+}
+
+fn print_range() {
+    text("RANGE");
+    section("DESCRIPTION");
+    text("  range(start..end) generates an array of consecutive integers from start to end,");
+    text("  inclusive on both ends. Bounds must be integers. The result is a regular array");
+    text("  and can be iterated with for, assigned to an array variable, or passed anywhere");
+    text("  an array is expected.");
+    section("SYNTAX");
+    text("  range(start..end)");
+    println!();
+    text("  start and end are integer expressions. end must be >= start.");
+    section("EXAMPLE");
+    text("  // iterate with for");
+    text("  def total as integer(0)");
+    text("  for n in range(1..10) (");
+    text("    total += n");
+    text("  )");
+    text("  assert(total == 55)");
+    println!();
+    text("  // assign to array variable");
+    text("  def nums as array");
+    text("  nums = range(1..5)");
+    text("  assert(nums.len() == 5)");
+    text("  assert(nums.get(0) == 1)");
+    text("  assert(nums.get(4) == 5)");
+    println!();
+    text("  // variable bounds");
+    text("  def start as integer(3)");
+    text("  def stop  as integer(7)");
+    text("  def slice as array");
+    text("  slice = range(start..stop)   // [3, 4, 5, 6, 7]");
+    section("ERRORS");
+    text("  · start > end          → runtime error: range start (...) must not be greater than end");
+    text("  · non-integer bounds   → runtime error: range bounds must be integers");
+    text("  · wrong argument form  → runtime error: range expects a range expression like range(1..5)");
 }
 
 fn print_assert() {

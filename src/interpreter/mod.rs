@@ -498,6 +498,9 @@ impl Interpreter {
             Expression::Index { object, index } => self.evaluate_index(object, index, scopes),
             Expression::Match { value, arms } => self.evaluate_match(value, arms, scopes),
             Expression::Block(stmts) => self.execute_block(stmts, scopes),
+            Expression::Range { .. } => Err(DefError::Runtime(  // only valid inside range()
+                "range expression is only valid as an argument to range()".to_string(),
+            )),
         }
     }
 

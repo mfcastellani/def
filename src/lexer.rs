@@ -12,6 +12,7 @@ pub enum Token {
     In,
     While,
     Do,
+    DotDot,
     If,
     Else,
     And,
@@ -188,7 +189,12 @@ impl Lexer {
                 }
                 '.' => {
                     self.advance();
-                    tokens.push((Token::Dot, line));
+                    if self.peek() == Some('.') {
+                        self.advance();
+                        tokens.push((Token::DotDot, line));
+                    } else {
+                        tokens.push((Token::Dot, line));
+                    }
                 }
                 '"' => tokens.push((self.read_string(line)?, line)),
                 ch if ch.is_ascii_digit() => tokens.push((self.read_numeric_literal()?, line)),
@@ -228,7 +234,7 @@ impl Lexer {
         let mut seen_dot = false;
 
         while let Some(ch) = self.peek() {
-            if ch == '.' && !seen_dot {
+            if ch == '.' && !seen_dot && self.peek_next() != Some('.') {
                 seen_dot = true;
                 self.advance();
             } else if ch.is_ascii_digit() {

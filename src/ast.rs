@@ -161,6 +161,10 @@ pub enum Expression {
         arms: Vec<MatchArm>,
     },
     Block(Vec<Stmt>),
+    Range {
+        start: Box<Expression>,
+        end: Box<Expression>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]

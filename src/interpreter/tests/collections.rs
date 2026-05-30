@@ -97,3 +97,45 @@ fn tuple_methods_work_inside_for_loop() {
              assert(last_key == \"Authorization\" == (last_value == \"Bearer abc123\"))");
     assert_eq!(value, Value::Boolean(true));
 }
+
+#[test]
+fn range_generates_inclusive_array() {
+    let value = run("def a as array\na = range(1..5)\nassert(a.len() == 5)\nassert(a.get(0) == 1)\nassert(a.get(4) == 5)");
+    assert_eq!(value, Value::Boolean(true));
+}
+
+#[test]
+fn range_single_element() {
+    let value = run("def a as array\na = range(3..3)\nassert(a.len() == 1)\nassert(a.get(0) == 3)");
+    assert_eq!(value, Value::Boolean(true));
+}
+
+#[test]
+fn range_usable_in_for_loop() {
+    let value = run("def total as integer(0)\nfor n in range(1..10) (\n  total += n\n)\nassert(total == 55)");
+    assert_eq!(value, Value::Boolean(true));
+}
+
+#[test]
+fn range_with_variable_bounds() {
+    let value = run("def start as integer(1)\ndef end as integer(5)\ndef a as array\na = range(start..end)\nassert(a.len() == 5)");
+    assert_eq!(value, Value::Boolean(true));
+}
+
+#[test]
+fn range_start_greater_than_end_errors() {
+    let error = interpret_error("def a as array\na = range(5..1)", ".");
+    assert!(
+        matches!(&error, DefError::Runtime(msg) if msg.contains("must not be greater than end")),
+        "unexpected error: {error:?}"
+    );
+}
+
+#[test]
+fn range_non_integer_bounds_errors() {
+    let error = interpret_error("def a as array\na = range(1.0..5.0)", ".");
+    assert!(
+        matches!(&error, DefError::Runtime(msg) if msg.contains("bounds must be integers")),
+        "unexpected error: {error:?}"
+    );
+}

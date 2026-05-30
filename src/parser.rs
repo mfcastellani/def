@@ -359,7 +359,23 @@ impl Parser {
     }
 
     fn parse_expression(&mut self) -> DefResult<Expression> {
-        self.parse_or()
+        self.parse_range()
+    }
+
+    fn parse_range(&mut self) -> DefResult<Expression> {
+        let expression = self.parse_or()?;
+
+        if self.matches(&Token::DotDot) {
+            // consume optional `=` (1..=5 is treated identically to 1..5)
+            self.matches(&Token::Equal);
+            let end = self.parse_or()?;
+            return Ok(Expression::Range {
+                start: Box::new(expression),
+                end: Box::new(end),
+            });
+        }
+
+        Ok(expression)
     }
 
     fn parse_or(&mut self) -> DefResult<Expression> {
@@ -756,10 +772,6 @@ impl Parser {
                 | Some(Token::TypeRequest)
                 | Some(Token::TypeMock)
                 | Some(Token::Match)
-                | Some(Token::Integer(_))
-                | Some(Token::Float(_))
-                | Some(Token::String(_))
-                | Some(Token::Boolean(_))
         )
     }
 

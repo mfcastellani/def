@@ -1,0 +1,51 @@
+// Real-world HTML scraping example against example.com
+// Maintained by IANA — always available, simple and predictable HTML.
+//
+// Run with: def run examples/html/example_com.def
+//
+// First run saves a snapshot under snapshots/ so subsequent runs
+// can also validate structural consistency with assert_snapshot().
+
+def res as response(
+  request(GET)
+    .path("https://example.com")
+    .header(tuple("Accept", "text/html"))
+    .snapshot()
+    .do()
+)
+
+assert(res.ok())
+assert(res.status() == 200)
+
+// body_matches — regex against the full HTML body
+assert(res.body_matches("Example Domain"))
+assert(res.body_matches("<h1>"))
+assert(res.body_matches("iana[.]org"))
+
+// html — text content of specific elements
+def page_title as string(res.html("title"))
+def heading    as string(res.html("h1"))
+def lang       as string(res.html_attr("html", "lang"))
+
+assert(page_title == "Example Domain")
+assert(heading == "Example Domain")
+assert(lang == "en")
+
+// html_attr — extract the href from the "Learn more" link
+def more_url as string(res.html_attr("a", "href"))
+assert(more_url != "")
+
+// html_all — collect all paragraphs
+def paragraphs as array()
+paragraphs = res.html_all("p")
+
+// assert snapshot structure is stable across runs
+res.assert_snapshot()
+
+print("status:     {{res.status()}} ({{res.duration()}}ms)")
+print("title:      {{page_title}}")
+print("heading:    {{heading}}")
+print("lang:       {{lang}}")
+print("learn more: {{more_url}}")
+print("all paragr: {{paragraphs}}")
+print("all assertions passed")

@@ -1,5 +1,6 @@
 use super::*;
 use crate::interpreter::http::call_response_method;
+use std::path::Path;
 
 #[test]
 fn json_simple_integer_field() {
@@ -7,6 +8,7 @@ fn json_simple_integer_field() {
         json_response(r#"{"id":1,"active":true}"#),
         "json",
         vec![Value::String("$.id".to_string())],
+        Path::new("."),
     )
     .unwrap();
     assert_eq!(result, Value::Integer(1));
@@ -18,6 +20,7 @@ fn json_string_field() {
         json_response(r#"{"id":1,"name":"Marcelo"}"#),
         "json",
         vec![Value::String("$.name".to_string())],
+        Path::new("."),
     )
     .unwrap();
     assert_eq!(result, Value::String("Marcelo".to_string()));
@@ -29,6 +32,7 @@ fn json_nested_field() {
         json_response(r#"{"user":{"name":"Alice","age":30}}"#),
         "json",
         vec![Value::String("$.user.name".to_string())],
+        Path::new("."),
     )
     .unwrap();
     assert_eq!(result, Value::String("Alice".to_string()));
@@ -40,6 +44,7 @@ fn json_array_index() {
         json_response(r#"{"items":["first","second","third"]}"#),
         "json",
         vec![Value::String("$.items[0]".to_string())],
+        Path::new("."),
     )
     .unwrap();
     assert_eq!(result, Value::String("first".to_string()));
@@ -51,6 +56,7 @@ fn json_array_index_then_field() {
         json_response(r#"{"users":[{"name":"Alice"},{"name":"Bob"}]}"#),
         "json",
         vec![Value::String("$.users[1].name".to_string())],
+        Path::new("."),
     )
     .unwrap();
     assert_eq!(result, Value::String("Bob".to_string()));
@@ -62,6 +68,7 @@ fn json_boolean_value() {
         json_response(r#"{"active":true,"deleted":false}"#),
         "json",
         vec![Value::String("$.active".to_string())],
+        Path::new("."),
     )
     .unwrap();
     assert_eq!(result, Value::Boolean(true));
@@ -73,6 +80,7 @@ fn json_null_value() {
         json_response(r#"{"data":null}"#),
         "json",
         vec![Value::String("$.data".to_string())],
+        Path::new("."),
     )
     .unwrap();
     assert_eq!(result, Value::Nil);
@@ -84,6 +92,7 @@ fn json_float_value() {
         json_response(r#"{"score":9.5}"#),
         "json",
         vec![Value::String("$.score".to_string())],
+        Path::new("."),
     )
     .unwrap();
     assert_eq!(result, Value::Float(9.5));
@@ -96,6 +105,7 @@ fn json_root_returns_compact_string() {
         json_response(body),
         "json",
         vec![Value::String("$".to_string())],
+        Path::new("."),
     )
     .unwrap();
     assert!(matches!(result, Value::String(_)));
@@ -107,6 +117,7 @@ fn json_path_not_found_errors() {
         json_response(r#"{"id":1}"#),
         "json",
         vec![Value::String("$.missing".to_string())],
+        Path::new("."),
     )
     .unwrap_err();
     assert!(
@@ -121,6 +132,7 @@ fn json_invalid_body_errors() {
         json_response("not json"),
         "json",
         vec![Value::String("$.id".to_string())],
+        Path::new("."),
     )
     .unwrap_err();
     assert!(
@@ -135,6 +147,7 @@ fn json_invalid_path_errors() {
         json_response(r#"{"id":1}"#),
         "json",
         vec![Value::String("id".to_string())],
+        Path::new("."),
     )
     .unwrap_err();
     assert!(
@@ -149,6 +162,7 @@ fn json_invalid_path_empty_field_errors() {
         json_response(r#"{"id":1}"#),
         "json",
         vec![Value::String("$.".to_string())],
+        Path::new("."),
     )
     .unwrap_err();
     assert!(
@@ -163,6 +177,7 @@ fn json_invalid_path_unclosed_bracket_errors() {
         json_response(r#"{"items":[1,2]}"#),
         "json",
         vec![Value::String("$.items[".to_string())],
+        Path::new("."),
     )
     .unwrap_err();
     assert!(
@@ -177,6 +192,7 @@ fn json_invalid_path_empty_index_errors() {
         json_response(r#"{"items":[1,2]}"#),
         "json",
         vec![Value::String("$.items[]".to_string())],
+        Path::new("."),
     )
     .unwrap_err();
     assert!(
@@ -191,6 +207,7 @@ fn json_invalid_path_non_numeric_index_errors() {
         json_response(r#"{"items":[1,2]}"#),
         "json",
         vec![Value::String("$.items[abc]".to_string())],
+        Path::new("."),
     )
     .unwrap_err();
     assert!(
@@ -201,7 +218,9 @@ fn json_invalid_path_non_numeric_index_errors() {
 
 #[test]
 fn json_wrong_arg_count_errors() {
-    let error = call_response_method(json_response(r#"{"id":1}"#), "json", vec![]).unwrap_err();
+    let error =
+        call_response_method(json_response(r#"{"id":1}"#), "json", vec![], Path::new("."))
+            .unwrap_err();
     assert!(
         matches!(&error, DefError::Runtime(msg) if msg.contains("response.json expects 1 argument")),
         "unexpected error: {error:?}"
@@ -214,6 +233,7 @@ fn json_non_string_arg_errors() {
         json_response(r#"{"id":1}"#),
         "json",
         vec![Value::Integer(1)],
+        Path::new("."),
     )
     .unwrap_err();
     assert!(
@@ -228,6 +248,7 @@ fn json_exists_returns_true_for_existing_path() {
         json_response(r#"{"id":1,"active":true}"#),
         "json_exists",
         vec![Value::String("$.id".to_string())],
+        Path::new("."),
     )
     .unwrap();
     assert_eq!(result, Value::Boolean(true));
@@ -239,6 +260,7 @@ fn json_exists_returns_false_for_missing_path() {
         json_response(r#"{"id":1}"#),
         "json_exists",
         vec![Value::String("$.missing".to_string())],
+        Path::new("."),
     )
     .unwrap();
     assert_eq!(result, Value::Boolean(false));
@@ -250,6 +272,7 @@ fn json_exists_returns_false_for_missing_nested_path() {
         json_response(r#"{"user":{"name":"Alice"}}"#),
         "json_exists",
         vec![Value::String("$.user.email".to_string())],
+        Path::new("."),
     )
     .unwrap();
     assert_eq!(result, Value::Boolean(false));
@@ -258,7 +281,8 @@ fn json_exists_returns_false_for_missing_nested_path() {
 #[test]
 fn json_exists_wrong_arg_count_errors() {
     let error =
-        call_response_method(json_response(r#"{"id":1}"#), "json_exists", vec![]).unwrap_err();
+        call_response_method(json_response(r#"{"id":1}"#), "json_exists", vec![], Path::new("."))
+            .unwrap_err();
     assert!(
         matches!(&error, DefError::Runtime(msg) if msg.contains("response.json_exists expects 1 argument")),
         "unexpected error: {error:?}"
@@ -271,6 +295,7 @@ fn json_exists_non_string_arg_errors() {
         json_response(r#"{"id":1}"#),
         "json_exists",
         vec![Value::Boolean(true)],
+        Path::new("."),
     )
     .unwrap_err();
     assert!(

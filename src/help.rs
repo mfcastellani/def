@@ -53,9 +53,12 @@ pub fn print_help() {
     text("  mock           Intercept HTTP requests with pre-configured responses");
     text("  query_string   URL query parameters inline or from .qdef template files");
     text("  request        Build and execute HTTP requests with a fluent API");
+    text("  form           Submit HTML forms with .form_from() and .fdef files");
+    text("  html           Query HTML responses with CSS selectors and regex");
     text("  json           JSON path assertions on response bodies");
     text("  response       Inspect HTTP response status, headers, and body");
     text("  retry          Retry, backoff strategies, and per-attempt timeout");
+    text("  snapshot       Save response snapshot to disk; validate structure with assert_snapshot()");
     text("  string         Text values and string operations");
     text("  tuple          Key/value pairs used for headers and query parameters");
     println!();
@@ -89,6 +92,8 @@ pub fn print_topic(topic: &str) {
         "params" | "from_cmd_param" | "cmdparam" => print_params(),
         "function" => print_function(),
         "headers" | "hdef" => print_headers(),
+        "form" | "fdef" => print_form(),
+        "html" => print_html(),
         "imported" => print_imported(),
         "integer" => print_integer(),
         "match" => print_match(),
@@ -97,6 +102,7 @@ pub fn print_topic(topic: &str) {
         "request" => print_request(),
         "response" => print_response(),
         "retry" => print_retry(),
+        "snapshot" => print_snapshot(),
         "string" => print_string(),
         "tuple" => print_tuple(),
         other => {
@@ -297,12 +303,14 @@ fn print_body() {
     section("SYNTAX");
     text("  request(POST)");
     text("    .path(url)");
-    text("    .body_from(\"path/to/file.jdef\")");
-    text("    .type(JSON)              // sets Content-Type: application/json");
-    text("    .with_var(variable)      // registers a variable for substitution (string, integer, float, boolean)");
+    text("    .body_from(\"path/to/file.jdef\")  // Content-Type inferred from extension");
+    text("    .type(JSON)                      // override Content-Type (optional)");
+    text("    .with_var(variable)              // registers a variable for substitution");
     text("    .do()");
     println!();
-    text("  Use .type(TEXT) with .tdef files.");
+    text("  .jdef files set Content-Type: application/json automatically.");
+    text("  .tdef files set Content-Type: text/plain automatically.");
+    text("  Use .type(JSON) or .type(TEXT) to override the inferred type.");
     section("EXAMPLE");
     text("  def title   as string(\"DefLang post\")");
     text("  def user_id as string(\"1\")");
@@ -311,7 +319,6 @@ fn print_body() {
     text("    request(POST)");
     text("      .path(\"https://jsonplaceholder.typicode.com/posts\")");
     text("      .body_from(\"jdef/post.jdef\")");
-    text("      .type(JSON)");
     text("      .with_var(title)");
     text("      .with_var(user_id)");
     text("      .do()");
@@ -954,13 +961,16 @@ fn print_request() {
     text("  .headers_from(path)              Load headers from a .hdef file");
     text("  .query_string(tuple(k, v))       Append a query parameter");
     text("  .query_string_from(path)         Load query params from a .qdef file");
-    text("  .body_from(path)                 Load body from a .jdef or .tdef file");
-    text("  .type(JSON)                      Set Content-Type: application/json");
-    text("  .type(TEXT)                      Set Content-Type: text/plain");
+    text("  .body_from(path)                 Load body; infers Content-Type from .jdef/.tdef");
+    text("  .type(JSON)                      Override Content-Type: application/json");
+    text("  .type(TEXT)                      Override Content-Type: text/plain");
     text("  .with_var(variable)              Register a variable for template substitution");
     text("                                   Accepts string, integer, float, or boolean.");
     text("                                   Unresolved {{placeholders}} abort at .do().");
     text("  .inspect()                       Print request details to stdout; returns self");
+    text("  .form_from(path)                 Load form fields from a .fdef file; sets Content-Type: application/x-www-form-urlencoded");
+    text("  .snapshot()                      Save response snapshot to snapshots/ (once per URL)");
+    text("  .mock_with_snapshot()            Use saved response as mock; save on first run");
     text("  .retries(n)                      Retry up to n times on failure");
     text("  .fixed_backoff(ms)               Wait ms between retries (constant)");
     text("  .linear_backoff(ms)              Wait ms, 2×ms, 3×ms, ... between retries");
@@ -988,7 +998,6 @@ fn print_request() {
     text("    request(POST)");
     text("      .path(\"https://jsonplaceholder.typicode.com/posts\")");
     text("      .body_from(\"jdef/post.jdef\")");
-    text("      .type(JSON)");
     text("      .with_var(title)");
     text("      .do()");
     text("  )");
@@ -1016,6 +1025,10 @@ fn print_response() {
     text("  size()                Response body size in bytes");
     text("  body()                Response body as string");
     text("  body_contains(text)   True when the body contains the given substring");
+    text("  body_matches(pattern) True when the body matches the given regex pattern");
+    text("  html(selector)        Text content of the first element matching the CSS selector");
+    text("  html_all(selector)    Array of text content for all matching elements");
+    text("  html_attr(sel, attr)  Attribute value of the first matching element");
     text("  content_type()        Value of the Content-Type response header");
     text("  header(name)          Value of a specific header (case-insensitive)");
     text("  headers()             All headers as an array of tuple(name, value)");
@@ -1023,6 +1036,7 @@ fn print_response() {
     text("  json_exists(path)     True when the JSON path exists in the body");
     text("  expect(predicate)     Assert a condition; aborts with a readable error if false");
     text("  inspect()             Print response details to stdout; returns self");
+    text("  assert_snapshot()     Assert structure matches saved snapshot; returns self");
     section("EXAMPLE");
     text("  def res as response(");
     text("    request(GET)");
@@ -1363,6 +1377,103 @@ fn print_inspect() {
     text("  def help expect    Assert response conditions with readable error messages");
 }
 
+fn print_snapshot() {
+    text("SNAPSHOT");
+    section("DESCRIPTION");
+    text("  .snapshot() records the HTTP response (status, headers, body)");
+    text("  as files inside a snapshots/ directory next to the running .def script.");
+    text("  The snapshot is only written once — if a snapshot for the same method");
+    text("  and URL already exists, the step is silently skipped.");
+    section("SYNTAX");
+    text("  request(METHOD)");
+    text("    .path(url)");
+    text("    ...");
+    text("    .snapshot()");
+    text("    .do()");
+    section("FILES");
+    text("  snapshots/{name}.sdef   Response status code");
+    text("  snapshots/{name}.hdef   Response headers");
+    text("  snapshots/{name}.jdef   Response body (Content-Type: application/json)");
+    text("  snapshots/{name}.tdef   Response body (Content-Type: text/plain)");
+    println!();
+    text("  Only files that have content are written. {name} is derived from the");
+    text("  HTTP method and URL plus a Unix timestamp, e.g.:");
+    text("    post-api-example-com-users-1748789600");
+    section("EXAMPLE");
+    text("  def res as response(");
+    text("    request(POST)");
+    text("      .path(\"https://api.example.com/users\")");
+    text("      .body_from(\"jdef/user.jdef\")");
+    text("      .snapshot()");
+    text("      .do()");
+    text("  )");
+    println!();
+    text("  After the first run you will find:");
+    text("    snapshots/post-api-example-com-users-1748789600.sdef   (e.g. \"201\")");
+    text("    snapshots/post-api-example-com-users-1748789600.hdef");
+    text("    snapshots/post-api-example-com-users-1748789600.jdef");
+    println!();
+    text("  Subsequent runs skip the snapshot because the slug already exists.");
+    section("NOTES");
+    text("  .snapshot() has no effect in dry-run mode (def check).");
+    text("  Place it anywhere in the builder chain before .do().");
+    section("MOCK WITH SNAPSHOT");
+    text("  .mock_with_snapshot() uses the same snapshot files as .snapshot():");
+    text("  - First run: executes the real HTTP call and saves the response.");
+    text("  - Subsequent runs: loads the saved response and returns it without");
+    text("    making any network call.");
+    println!();
+    text("  The files are identical in format and naming to .snapshot() — they are");
+    text("  fully interchangeable. Running .snapshot() on an endpoint and then");
+    text("  switching to .mock_with_snapshot() will replay the existing snapshot.");
+    println!();
+    text("  EXAMPLE");
+    text("    def res as response(");
+    text("      request(POST)");
+    text("        .path(\"https://api.example.com/users\")");
+    text("        .body_from(\"jdef/user.jdef\")");
+    text("        .mock_with_snapshot()");
+    text("        .do()");
+    text("    )");
+    println!();
+    text("  On the first run, the real POST is sent and the response is stored at:");
+    text("    snapshots/post-api-example-com-users-{timestamp}.sdef");
+    text("    snapshots/post-api-example-com-users-{timestamp}.hdef");
+    text("    snapshots/post-api-example-com-users-{timestamp}.jdef");
+    println!();
+    text("  On subsequent runs, the response is replayed instantly from those files.");
+    section("ASSERT SNAPSHOT");
+    text("  assert_snapshot() validates that the current response matches the structure");
+    text("  of the saved snapshot. It is called on the response value after .do().");
+    text("  The snapshot must already exist (created by .snapshot() or .mock_with_snapshot()).");
+    println!();
+    text("  What is validated:");
+    text("    - Status code must match the snapshot exactly.");
+    text("    - JSON body: field names and types are compared recursively.");
+    text("      Values may change; types cannot.");
+    text("    - Text body: presence/absence must match.");
+    println!();
+    text("  EXAMPLE");
+    text("    def res as response(");
+    text("      request(GET)");
+    text("        .path(\"https://api.example.com/users/1\")");
+    text("        .snapshot()");
+    text("        .do()");
+    text("    )");
+    println!();
+    text("    res.assert_snapshot()");
+    println!();
+    text("  On type mismatch, the error names the exact path:");
+    text("    assert_snapshot failed: JSON structure changed");
+    text("    $.user.id: expected number, got string");
+    println!();
+    text("  assert_snapshot() returns self, so it can be chained:");
+    text("    res.assert_snapshot().expect(ok)");
+    section("SEE ALSO");
+    text("  def help request   Full list of request builder methods");
+    text("  def help inspect   Debug request and response details");
+}
+
 fn print_tuple() {
     text("TUPLE");
     section("DESCRIPTION");
@@ -1398,4 +1509,94 @@ fn print_tuple() {
     text("  for h in res.headers() (");
     text("    print(\"{{h.key()}}: {{h.value()}}\")");
     text("  )");
+}
+
+fn print_form() {
+    text("FORM");
+    section("DESCRIPTION");
+    text("  .form_from(path) loads HTML form fields from a .fdef file and encodes them");
+    text("  as application/x-www-form-urlencoded in the request body.");
+    text("  Field values are URL-encoded automatically. Template variable substitution");
+    text("  is supported via with_var(...).");
+    section("SYNTAX");
+    text("  request(POST)");
+    text("    .path(url)");
+    text("    .form_from(\"path/to/form.fdef\")");
+    text("    .with_var(variable)");
+    text("    .do()");
+    section("FILE FORMAT (.fdef)");
+    text("  One field per line: key: value");
+    text("  Lines starting with // or # are comments.");
+    text("  {{variable}} placeholders are substituted via with_var(...).");
+    println!();
+    text("  // login.fdef");
+    text("  username: {{username}}");
+    text("  password: {{password}}");
+    text("  remember_me: true");
+    section("EXAMPLE");
+    text("  def username as string(\"alice\")");
+    text("  def password as string(\"s3cr3t\")");
+    println!();
+    text("  def res as response(");
+    text("    request(POST)");
+    text("      .path(\"https://example.com/login\")");
+    text("      .form_from(\"login.fdef\")");
+    text("      .with_var(username)");
+    text("      .with_var(password)");
+    text("      .do()");
+    text("  )");
+    println!();
+    text("  assert(res.ok())");
+    section("SEE ALSO");
+    text("  def help request   Full list of request builder methods");
+    text("  def help body      .jdef and .tdef body file formats");
+}
+
+fn print_html() {
+    text("HTML");
+    section("DESCRIPTION");
+    text("  Three response methods support querying HTML bodies using CSS selectors.");
+    text("  body_matches(pattern) tests the body against a regular expression.");
+    section("METHODS");
+    text("  body_matches(pattern)");
+    text("      True when the response body matches the given regex pattern.");
+    text("      Works on any body type — HTML, JSON, or plain text.");
+    println!();
+    text("  html(selector)");
+    text("      Returns the trimmed text content of the first element matching the");
+    text("      CSS selector. Returns an empty string when nothing matches.");
+    println!();
+    text("  html_all(selector)");
+    text("      Returns an array of trimmed text content for all matching elements.");
+    text("      Declare the target variable as array() and assign:");
+    text("        def items as array()");
+    text("        items = res.html_all(\"li\")");
+    println!();
+    text("  html_attr(selector, attribute)");
+    text("      Returns the attribute value of the first matching element.");
+    text("      Returns an empty string when the element or attribute is not found.");
+    section("EXAMPLE");
+    text("  def res as response(");
+    text("    request(GET)");
+    text("      .path(\"https://example.com/\")");
+    text("      .do()");
+    text("  )");
+    println!();
+    text("  // Regex match");
+    text("  assert(res.body_matches(\"Welcome\"))");
+    text("  assert(res.body_matches(\"<title>.+</title>\"))");
+    println!();
+    text("  // First matching element text");
+    text("  def title as string(res.html(\"title\"))");
+    text("  def hero  as string(res.html(\"h1.hero\"))");
+    println!();
+    text("  // All matching elements");
+    text("  def links as array()");
+    text("  links = res.html_all(\"nav a\")");
+    println!();
+    text("  // Attribute of first match");
+    text("  def url as string(res.html_attr(\"a.source\", \"href\"))");
+    section("SEE ALSO");
+    text("  def help response   All response methods");
+    text("  def help json       JSON path assertions");
 }

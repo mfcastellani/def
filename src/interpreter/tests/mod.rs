@@ -87,6 +87,9 @@ pub fn interp_with_params(input: &str, params: &[(&str, &str)]) -> Interpreter {
 pub fn temp_dir() -> PathBuf {
     let id = TEMP_COUNTER.fetch_add(1, Ordering::SeqCst);
     let path = std::env::temp_dir().join(format!("def-headers-test-{id}"));
+    if path.exists() {
+        fs::remove_dir_all(&path).unwrap();
+    }
     fs::create_dir_all(&path).unwrap();
     path
 }
@@ -125,10 +128,13 @@ pub fn json_response(body: &str) -> ResponseValue {
         body: body.to_string(),
         headers: Vec::new(),
         duration_ms: 0,
+        method: String::new(),
+        url: String::new(),
     }
 }
 
 mod builtins;
+mod html;
 mod collections;
 mod control_flow;
 mod datetime;
@@ -141,4 +147,5 @@ mod params;
 mod query_string;
 mod request;
 mod response;
+mod snapshot;
 mod variables;

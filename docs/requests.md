@@ -26,8 +26,9 @@ Supported HTTP methods: `GET`, `POST`, `PUT`, `PATCH`, `DELETE`, and any method 
 | `.headers_from(path)`          | Load headers from a `.hdef` file                                       |
 | `.query_string(tuple(k, v))`   | Append a query parameter                                               |
 | `.query_string_from(path)`     | Load query params from a `.qdef` file                                  |
-| `.body_from(path)`             | Load body from a `.jdef` or `.tdef` file                               |
-| `.type(JSON\|TEXT)`            | Set `Content-Type` header (`application/json` or `text/plain`)         |
+| `.body_from(path)`             | Load body from a `.jdef` or `.tdef` file; infers `Content-Type` automatically |
+| `.form_from(path)`             | Load form fields from a `.fdef` file; sets `Content-Type: application/x-www-form-urlencoded` |
+| `.type(JSON\|TEXT)`            | Override `Content-Type` header (`application/json` or `text/plain`)    |
 | `.with_var(variable)`          | Register a variable for template substitution                          |
 | `.retries(n)`                  | Retry the request up to `n` times on network failure                   |
 | `.fixed_backoff(ms)`           | Wait `ms` milliseconds between retries (constant)                      |
@@ -37,6 +38,8 @@ Supported HTTP methods: `GET`, `POST`, `PUT`, `PATCH`, `DELETE`, and any method 
 | `.timeout(ms, "message")`      | Maximum time per attempt; show `"message"` on failure                  |
 | `.with_mocks(mock_or_array)`   | Intercept matching requests with pre-configured responses              |
 | `.inspect()`                   | Print request details to stdout for debugging; returns self            |
+| `.snapshot()`                  | Save a response snapshot to `snapshots/`; skipped if one already exists        |
+| `.mock_with_snapshot()`        | Replay response from snapshot if it exists; otherwise execute and save it      |
 | `.do()`                        | Send the request and return a `response`                               |
 
 ## Response Methods
@@ -50,6 +53,10 @@ Supported HTTP methods: `GET`, `POST`, `PUT`, `PATCH`, `DELETE`, and any method 
 | `size()`                | `integer`  | response body size in bytes                       |
 | `body()`                | `string`   | response body                                     |
 | `body_contains(string)` | `boolean`  | true when the body contains the given substring   |
+| `body_matches(pattern)` | `boolean`  | true when the body matches the given regex pattern |
+| `html(selector)`        | `string`   | text content of the first element matching the CSS selector |
+| `html_all(selector)`    | `array`    | text content of all elements matching the CSS selector |
+| `html_attr(selector, attr)` | `string` | attribute value of the first element matching the CSS selector |
 | `content_type()`        | `string`   | value of the `Content-Type` response header       |
 | `header(name)`          | `string`   | value of a specific response header (case-insensitive) |
 | `headers()`             | `array`    | all headers as `tuple(name, value)` elements      |
@@ -57,6 +64,7 @@ Supported HTTP methods: `GET`, `POST`, `PUT`, `PATCH`, `DELETE`, and any method 
 | `json_exists(path)`     | `boolean`  | true when the JSON path exists in the body        |
 | `expect(predicate)`     | `response` | assert a condition; returns self for chaining     |
 | `inspect()`             | `response` | print response details to stdout; returns self    |
+| `assert_snapshot()`     | `response` | assert the response structure matches the saved snapshot; returns self |
 
 ## Headers
 
@@ -123,7 +131,7 @@ page: 1
 
 ## Request Body
 
-Load a body file with `body_from(path)` and declare its type with `.type(JSON)` or `.type(TEXT)`. Def automatically sets the appropriate `Content-Type` header:
+Load a body file with `body_from(path)`. The `Content-Type` header is inferred automatically from the file extension: `.jdef` → `application/json`, `.tdef` → `text/plain`. Use `.type(JSON|TEXT)` to override when needed.
 
 ```def
 def language as string("Def")
@@ -132,7 +140,6 @@ def res as response(
   request(POST)
     .path("https://httpbingo.org/anything")
     .body_from("jdef/body.jdef")
-    .type(JSON)
     .with_var(language)
     .do()
 )
@@ -154,6 +161,33 @@ def res as response(
 language: {{language}}
 purpose: HTTP testing
 ```
+
+## Form Body
+
+`.form_from(path)` loads form fields from a `.fdef` file and sends them as `application/x-www-form-urlencoded`. All field values are URL-encoded automatically.
+
+```def
+def username as string("alice")
+
+def res as response(
+  request(POST)
+    .path("https://example.com/login")
+    .form_from("login.fdef")
+    .with_var(username)
+    .do()
+)
+```
+
+`.fdef` format: one `key: value` per line, `//` and `#` comments supported, `{{variable}}` placeholders substituted via `with_var(...)`:
+
+```fdef
+// HTML form fields
+username: {{username}}
+password: secret123
+remember_me: true
+```
+
+The resulting request body: `username=alice&password=secret123&remember_me=true`.
 
 ## Template Variables
 
@@ -304,3 +338,167 @@ Output:
 ```
 
 Both methods return `self` and can be chained.
+
+## Snapshots
+
+`.snapshot()` records the HTTP **response** (status, headers, and body) as files under a `snapshots/` directory next to the script. The snapshot is only created once — if a snapshot for the same method and URL already exists, the call is silently skipped.
+
+```def
+def res as response(
+  request(POST)
+    .path("https://api.example.com/posts")
+    .body_from("post.jdef")
+    .snapshot()
+    .do()
+)
+```
+
+Files written (only those that have content):
+
+| File | Contains |
+|---|---|
+| `snapshots/{name}.sdef` | Response status code |
+| `snapshots/{name}.hdef` | Response headers |
+| `snapshots/{name}.jdef` | Response body (when `Content-Type: application/json`) |
+| `snapshots/{name}.tdef` | Response body (when `Content-Type: text/plain`) |
+
+The name is derived from the HTTP method and URL — for example `POST https://api.example.com/posts` becomes `post-api-example-com-posts-{timestamp}`.
+
+Place `.snapshot()` anywhere in the builder chain before `.do()`. It has no effect in dry-run mode (`def check`).
+
+## Mock with Snapshot
+
+`.mock_with_snapshot()` uses the same snapshot files as `.snapshot()`. On the first run it executes the real request and saves the response; on subsequent runs it loads the saved files and returns the response without making any network call.
+
+```def
+def res as response(
+  request(POST)
+    .path("https://api.example.com/posts")
+    .body_from("post.jdef")
+    .mock_with_snapshot()
+    .do()
+)
+```
+
+Because `.snapshot()` and `.mock_with_snapshot()` share the same file format and naming, they are fully interchangeable: running `.snapshot()` on an endpoint and then switching to `.mock_with_snapshot()` will replay the existing snapshot immediately.
+
+## Assert Snapshot
+
+`assert_snapshot()` validates that the current response matches the structure of a previously saved snapshot. It is called on a response value after `.do()`.
+
+```def
+def res as response(
+  request(GET)
+    .path("https://api.example.com/users/1")
+    .snapshot()   // saves the snapshot on first run
+    .do()
+)
+
+res.assert_snapshot()   // validates structure on every run
+```
+
+**What is validated:**
+
+- **Status code** — must match the snapshot exactly.
+- **JSON body structure** — when `Content-Type: application/json`, the field names and types are compared recursively. Values may change freely; types cannot.
+- **Text body** — presence or absence of a body must match the snapshot (both empty or both non-empty).
+
+**JSON structural rules:**
+
+| Change | Result |
+|--------|--------|
+| Field value changes (`"id": 1` → `"id": 2`) | Pass |
+| Field type changes (`"id": 1` → `"id": "abc"`) | Fail |
+| Field removed from response | Fail |
+| Unexpected field added to response | Fail |
+| Array becomes empty (or vice versa) | Fail |
+
+When the assertion fails, the error message identifies the exact path and the type mismatch:
+
+```
+runtime error: assert_snapshot failed: JSON structure changed
+$.user.id: expected number, got string
+$.user.email: missing field "email"
+```
+
+**First run:** if no snapshot exists for the endpoint, `assert_snapshot()` stops the script with an error. Run `.snapshot()` first to create the baseline.
+
+`assert_snapshot()` returns the response, so it can be chained:
+
+```def
+res.assert_snapshot().expect(ok)
+```
+
+## HTML Responses
+
+Three response methods support querying HTML bodies using CSS selectors.
+
+### body_matches(pattern)
+
+Tests the body against a regular expression. Works on any body type (HTML, JSON, text).
+
+```def
+assert(res.body_matches("<title>.+</title>"))
+assert(res.body_matches("\\d{3}-\\d{4}"))   // phone number pattern
+assert(not res.body_matches("error"))
+```
+
+### html(selector)
+
+Returns the trimmed text content of the **first** element matching the CSS selector. Returns an empty string if no element matches.
+
+```def
+def page_title as string(res.html("title"))
+def heading   as string(res.html("h1.hero"))
+def first_link as string(res.html("nav a"))
+```
+
+### html_all(selector)
+
+Returns an array of trimmed text content for **all** elements matching the selector. Declare the variable as `array()` and assign:
+
+```def
+def links as array()
+links = res.html_all("nav a")
+
+for link in links (
+  print("link: {{link}}")
+)
+```
+
+### html_attr(selector, attribute)
+
+Returns the attribute value of the **first** element matching the selector. Returns an empty string if the element or attribute is not found.
+
+```def
+def repo_url  as string(res.html_attr("a.source", "href"))
+def logo_src  as string(res.html_attr("img#logo", "src"))
+def page_lang as string(res.html_attr("html", "lang"))
+```
+
+### Full example
+
+```def
+def page_mock as mock(GET, "https://example.com/")
+  .header("Content-Type", "text/html; charset=utf-8")
+  .body_from("page.html")
+  .reply(200)
+
+def res as response(
+  request(GET)
+    .path("https://example.com/")
+    .with_mocks(page_mock)
+    .do()
+)
+
+assert(res.ok())
+assert(res.body_matches("Welcome"))
+
+def title as string(res.html("title"))
+assert(title != "")
+
+def items as array()
+items = res.html_all("li")
+
+def repo as string(res.html_attr("a.source", "href"))
+```

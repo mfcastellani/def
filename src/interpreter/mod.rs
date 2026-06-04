@@ -719,7 +719,7 @@ impl Interpreter {
             Value::RequestHandle(_) | Value::Request(_) => {
                 self.call_request_method(object, name, values)
             }
-            Value::Response(response) => call_response_method(response, name, values),
+            Value::Response(response) => call_response_method(response, name, values, &self.base_dir),
             Value::Array(items) => call_array_method(items, name, values),
             Value::Tuple { key, value } => call_tuple_method(key, *value, name, values),
             Value::DateTime(value) => call_datetime_method(value, name, values),
@@ -745,6 +745,8 @@ impl Interpreter {
                 body: String::new(),
                 headers: vec![],
                 duration_ms: 0,
+                method: String::new(),
+                url: String::new(),
             }));
         }
 

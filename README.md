@@ -51,6 +51,8 @@ cargo run -- run examples/types/integer.def
 - **CLI parameters** — pass typed values at runtime with `--param KEY=VALUE`
 - **Dry-run mode** — `def check` validates the full script without making any HTTP calls
 - **JSON path** — extract and assert on response fields with `res.json("$.user.name")`
+- **Snapshot assertions** — save a response baseline with `.snapshot()` and validate structural consistency on every run with `res.assert_snapshot()`
+- **HTML support** — query HTML responses with CSS selectors (`res.html()`, `res.html_all()`, `res.html_attr()`), regex matching (`res.body_matches()`), and submit forms with `.form_from()` and `.fdef` files
 
 ## Documentation
 
@@ -60,6 +62,7 @@ cargo run -- run examples/types/integer.def
 | [Requests](docs/requests.md) | HTTP client, builder API, response methods, headers, body, retry, expect, inspect |
 | [Mocks](docs/mocks.md) | Intercept requests with pre-configured responses |
 | [JSON Assertions](docs/json.md) | `json(path)` and `json_exists(path)` on response bodies |
+| [Snapshots](docs/requests.md#snapshots) | Save response baselines and validate structural consistency with `assert_snapshot()` |
 | [Imports](docs/imports.md) | Multi-file workflows and module organization |
 | [Environment Variables](docs/envvars.md) | `.edef` files and `from_env_var` |
 | [Parameters](docs/params.md) | `--param` and `from_cmd_param` |
@@ -73,7 +76,8 @@ The `examples/` directory is organized by topic:
 
 ```
 examples/
-├── assertions/        # json() and json_exists() assertions on response bodies
+├── assertions/        # assert(), json() assertions, and assert_snapshot() for structural validation
+├── html/              # HTML scraping with CSS selectors, regex matching, and form submission
 ├── brazilian_docs/    # CPF and CNPJ generators
 ├── language/          # control flow, loops, imports, functions
 ├── types/             # one file per type

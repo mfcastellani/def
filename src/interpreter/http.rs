@@ -5,6 +5,9 @@ use std::{
     time::Duration,
 };
 
+use regex::Regex;
+use scraper::{Html, Selector};
+
 use crate::error::{DefError, DefResult};
 use crate::value::{BackoffStrategy, RequestValue, ResponseValue, Value};
 
@@ -22,6 +25,8 @@ pub(super) fn new_request_value(method: &str) -> Value {
         timeout_ms: None,
         timeout_message: None,
         mocks: Vec::new(),
+        snapshot: false,
+        mock_with_snapshot: false,
     })
 }
 
@@ -122,6 +127,58 @@ pub(super) fn apply_request_method(
 
             let raw = read_body_file(base_dir, path)?;
             request.body = Some(render_template(&raw, &request.vars));
+
+            let already_has_content_type = request
+                .headers
+                .iter()
+                .any(|(k, _)| k.to_ascii_lowercase() == "content-type");
+
+            if !already_has_content_type {
+                let inferred = if path.ends_with(".jdef") {
+                    Some("application/json")
+                } else if path.ends_with(".tdef") {
+                    Some("text/plain")
+                } else {
+                    None
+                };
+                if let Some(ct) = inferred {
+                    set_request_header(&mut request.headers, "Content-Type", ct)?;
+                }
+            }
+
+            Ok(RequestMethodResult::Request)
+        }
+        "form_from" => {
+            if args.len() != 1 {
+                return Err(DefError::Runtime(format!(
+                    "request.form_from expects 1 argument, got {}",
+                    args.len()
+                )));
+            }
+            let Value::String(path) = &args[0] else {
+                return Err(DefError::Runtime(
+                    "request.form_from expects a string path".to_string(),
+                ));
+            };
+
+            let fields = read_form_file(base_dir, path)?;
+            let encoded: String = fields
+                .iter()
+                .map(|(k, v)| {
+                    let k = render_template(k, &request.vars);
+                    let v = render_template(v, &request.vars);
+                    format!("{}={}", url_encode(&k), url_encode(&v))
+                })
+                .collect::<Vec<_>>()
+                .join("&");
+
+            request.body = Some(encoded);
+            set_request_header(
+                &mut request.headers,
+                "Content-Type",
+                "application/x-www-form-urlencoded",
+            )?;
+
             Ok(RequestMethodResult::Request)
         }
         "type" => {
@@ -287,6 +344,26 @@ pub(super) fn apply_request_method(
             }
             Ok(RequestMethodResult::Request)
         }
+        "snapshot" => {
+            if !args.is_empty() {
+                return Err(DefError::Runtime(format!(
+                    "request.snapshot expects 0 arguments, got {}",
+                    args.len()
+                )));
+            }
+            request.snapshot = true;
+            Ok(RequestMethodResult::Request)
+        }
+        "mock_with_snapshot" => {
+            if !args.is_empty() {
+                return Err(DefError::Runtime(format!(
+                    "request.mock_with_snapshot expects 0 arguments, got {}",
+                    args.len()
+                )));
+            }
+            request.mock_with_snapshot = true;
+            Ok(RequestMethodResult::Request)
+        }
         "do" => {
             if !args.is_empty() {
                 return Err(DefError::Runtime(format!(
@@ -295,7 +372,27 @@ pub(super) fn apply_request_method(
                 )));
             }
 
-            execute_http_request(request).map(RequestMethodResult::Value)
+            if request.mock_with_snapshot {
+                let url = request.path.as_deref().unwrap_or("unknown").to_string();
+                let base_name = snapshot_slug(&request.method, &url);
+                let snapshots_dir = base_dir.join("snapshots");
+                if let Some(response) = load_response_snapshot(&snapshots_dir, &base_name, &request.method, &url) {
+                    return Ok(RequestMethodResult::Value(Value::Response(response)));
+                }
+                let response_value = execute_http_request(request)?;
+                if let Value::Response(ref rv) = response_value {
+                    save_snapshot(rv, &request.method, &url, base_dir);
+                }
+                return Ok(RequestMethodResult::Value(response_value));
+            }
+
+            let response = execute_http_request(request)?;
+            if request.snapshot {
+                if let Value::Response(ref rv) = response {
+                    save_snapshot(rv, &request.method, request.path.as_deref().unwrap_or("unknown"), base_dir);
+                }
+            }
+            Ok(RequestMethodResult::Value(response))
         }
         "status" => {
             if !args.is_empty() {
@@ -593,6 +690,56 @@ fn parse_query_string_source(source: &str, context: &str) -> DefResult<Vec<(Stri
     Ok(query_strings)
 }
 
+fn url_encode(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for byte in s.bytes() {
+        match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                out.push(byte as char);
+            }
+            b' ' => out.push('+'),
+            b => out.push_str(&format!("%{b:02X}")),
+        }
+    }
+    out
+}
+
+fn read_form_file(base_dir: &Path, form_path: &str) -> DefResult<Vec<(String, String)>> {
+    let path = resolve_path(base_dir, form_path);
+    let source = fs::read_to_string(&path).map_err(|e| {
+        DefError::Runtime(format!(
+            "request.form_from failed to read '{}': {e}",
+            path.display()
+        ))
+    })?;
+    parse_form_source(&source, &path.display().to_string())
+}
+
+fn parse_form_source(source: &str, context: &str) -> DefResult<Vec<(String, String)>> {
+    let mut fields = Vec::new();
+    for (index, line) in source.lines().enumerate() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() || trimmed.starts_with("//") || trimmed.starts_with('#') {
+            continue;
+        }
+        let Some((key, value)) = trimmed.split_once(':') else {
+            return Err(DefError::Runtime(format!(
+                "invalid form line {} in '{context}': expected 'key: value'",
+                index + 1
+            )));
+        };
+        let key = key.trim();
+        if key.is_empty() {
+            return Err(DefError::Runtime(format!(
+                "invalid form line {} in '{context}': field name cannot be empty",
+                index + 1
+            )));
+        }
+        fields.push((key.to_string(), value.trim().to_string()));
+    }
+    Ok(fields)
+}
+
 pub(super) fn resolve_path(base_dir: &Path, path: &str) -> PathBuf {
     let path = Path::new(path);
     if path.is_absolute() {
@@ -656,6 +803,8 @@ fn execute_http_request_once(request: &RequestValue) -> DefResult<Value> {
                 body: mock.body.clone(),
                 headers: mock.headers.clone(),
                 duration_ms: mock.delay_ms as i64,
+                method: request.method.clone(),
+                url: path.clone(),
             }));
         }
     }
@@ -700,6 +849,8 @@ fn execute_http_request_once(request: &RequestValue) -> DefResult<Value> {
                 body,
                 headers,
                 duration_ms,
+                method: request.method.clone(),
+                url: path.clone(),
             }));
         }
         Err(ureq::Error::Transport(transport)) => {
@@ -732,6 +883,8 @@ fn execute_http_request_once(request: &RequestValue) -> DefResult<Value> {
         body,
         headers,
         duration_ms,
+        method: request.method.clone(),
+        url: path.clone(),
     }))
 }
 
@@ -861,6 +1014,7 @@ pub(super) fn call_response_method(
     response: ResponseValue,
     name: &str,
     args: Vec<Value>,
+    base_dir: &Path,
 ) -> DefResult<Value> {
     match name {
         "body" => {
@@ -1098,8 +1252,333 @@ pub(super) fn call_response_method(
             let segments = parse_json_path(path).map_err(DefError::Runtime)?;
             Ok(Value::Boolean(navigate_json(&root, &segments).is_some()))
         }
+        "body_matches" => {
+            if args.len() != 1 {
+                return Err(DefError::Runtime(format!(
+                    "response.body_matches expects 1 argument, got {}",
+                    args.len()
+                )));
+            }
+            let Value::String(pattern) = &args[0] else {
+                return Err(DefError::Runtime(
+                    "response.body_matches expects a string regex pattern".to_string(),
+                ));
+            };
+            let re = Regex::new(pattern).map_err(|e| {
+                DefError::Runtime(format!("response.body_matches: invalid regex '{pattern}': {e}"))
+            })?;
+            Ok(Value::Boolean(re.is_match(&response.body)))
+        }
+        "html" => {
+            if args.len() != 1 {
+                return Err(DefError::Runtime(format!(
+                    "response.html expects 1 argument, got {}",
+                    args.len()
+                )));
+            }
+            let Value::String(selector_str) = &args[0] else {
+                return Err(DefError::Runtime(
+                    "response.html expects a string CSS selector".to_string(),
+                ));
+            };
+            let selector = Selector::parse(selector_str).map_err(|_| {
+                DefError::Runtime(format!("response.html: invalid CSS selector '{selector_str}'"))
+            })?;
+            let document = Html::parse_document(&response.body);
+            let text = document
+                .select(&selector)
+                .next()
+                .map(|el| el.text().collect::<Vec<_>>().join("").trim().to_string())
+                .unwrap_or_default();
+            Ok(Value::String(text))
+        }
+        "html_all" => {
+            if args.len() != 1 {
+                return Err(DefError::Runtime(format!(
+                    "response.html_all expects 1 argument, got {}",
+                    args.len()
+                )));
+            }
+            let Value::String(selector_str) = &args[0] else {
+                return Err(DefError::Runtime(
+                    "response.html_all expects a string CSS selector".to_string(),
+                ));
+            };
+            let selector = Selector::parse(selector_str).map_err(|_| {
+                DefError::Runtime(format!(
+                    "response.html_all: invalid CSS selector '{selector_str}'"
+                ))
+            })?;
+            let document = Html::parse_document(&response.body);
+            let items = document
+                .select(&selector)
+                .map(|el| Value::String(el.text().collect::<Vec<_>>().join("").trim().to_string()))
+                .collect();
+            Ok(Value::Array(items))
+        }
+        "html_attr" => {
+            if args.len() != 2 {
+                return Err(DefError::Runtime(format!(
+                    "response.html_attr expects 2 arguments, got {}",
+                    args.len()
+                )));
+            }
+            let (Value::String(selector_str), Value::String(attr_name)) = (&args[0], &args[1])
+            else {
+                return Err(DefError::Runtime(
+                    "response.html_attr expects (css_selector, attribute_name) as strings"
+                        .to_string(),
+                ));
+            };
+            let selector = Selector::parse(selector_str).map_err(|_| {
+                DefError::Runtime(format!(
+                    "response.html_attr: invalid CSS selector '{selector_str}'"
+                ))
+            })?;
+            let document = Html::parse_document(&response.body);
+            let value = document
+                .select(&selector)
+                .next()
+                .and_then(|el| el.value().attr(attr_name))
+                .unwrap_or_default()
+                .to_string();
+            Ok(Value::String(value))
+        }
+        "assert_snapshot" => {
+            if !args.is_empty() {
+                return Err(DefError::Runtime(format!(
+                    "response.assert_snapshot expects 0 arguments, got {}",
+                    args.len()
+                )));
+            }
+
+            let base_name = snapshot_slug(&response.method, &response.url);
+            let snapshots_dir = base_dir.join("snapshots");
+
+            let Some(snapshot) = load_response_snapshot(&snapshots_dir, &base_name, &response.method, &response.url) else {
+                return Err(DefError::Runtime(format!(
+                    "assert_snapshot: no snapshot found for {} {} — run with .snapshot() first",
+                    response.method, response.url
+                )));
+            };
+
+            if snapshot.status != response.status {
+                return Err(DefError::Runtime(format!(
+                    "assert_snapshot failed: status changed from {} to {}",
+                    snapshot.status, response.status
+                )));
+            }
+
+            let is_json = response.headers.iter().any(|(k, v)| {
+                k == "content-type" && v.contains("application/json")
+            });
+
+            if is_json {
+                let snap_json: serde_json::Value = serde_json::from_str(&snapshot.body)
+                    .map_err(|_| DefError::Runtime("assert_snapshot: snapshot body is not valid JSON".to_string()))?;
+                let actual_json: serde_json::Value = serde_json::from_str(&response.body)
+                    .map_err(|_| DefError::Runtime("assert_snapshot: response body is not valid JSON".to_string()))?;
+
+                let diffs = compare_json_structures(&snap_json, &actual_json, "$");
+                if !diffs.is_empty() {
+                    return Err(DefError::Runtime(format!(
+                        "assert_snapshot failed: JSON structure changed\n{}",
+                        diffs.join("\n")
+                    )));
+                }
+            } else if snapshot.body.is_empty() != response.body.is_empty() {
+                return Err(DefError::Runtime(format!(
+                    "assert_snapshot failed: body presence changed (snapshot was {}, response is {})",
+                    if snapshot.body.is_empty() { "empty" } else { "non-empty" },
+                    if response.body.is_empty() { "empty" } else { "non-empty" },
+                )));
+            }
+
+            Ok(Value::Response(response))
+        }
         _ => Err(DefError::Runtime(format!(
             "unknown response method '{name}'"
         ))),
     }
+}
+
+fn compare_json_structures(
+    snapshot: &serde_json::Value,
+    actual: &serde_json::Value,
+    path: &str,
+) -> Vec<String> {
+    use serde_json::Value as J;
+    match (snapshot, actual) {
+        (J::Null, J::Null) | (J::Bool(_), J::Bool(_)) | (J::Number(_), J::Number(_)) | (J::String(_), J::String(_)) => vec![],
+        (J::Array(snap_arr), J::Array(act_arr)) => {
+            if snap_arr.is_empty() && !act_arr.is_empty() {
+                vec![format!("{path}: expected empty array, got array with {} element(s)", act_arr.len())]
+            } else if !snap_arr.is_empty() && act_arr.is_empty() {
+                vec![format!("{path}: expected non-empty array, got empty array")]
+            } else if !snap_arr.is_empty() {
+                compare_json_structures(&snap_arr[0], &act_arr[0], &format!("{path}[0]"))
+            } else {
+                vec![]
+            }
+        }
+        (J::Object(snap_obj), J::Object(act_obj)) => {
+            let mut diffs = vec![];
+            for (key, snap_val) in snap_obj {
+                match act_obj.get(key) {
+                    None => diffs.push(format!("{path}: missing field \"{key}\"")),
+                    Some(act_val) => diffs.extend(compare_json_structures(snap_val, act_val, &format!("{path}.{key}"))),
+                }
+            }
+            for key in act_obj.keys() {
+                if !snap_obj.contains_key(key) {
+                    diffs.push(format!("{path}: unexpected field \"{key}\" not present in snapshot"));
+                }
+            }
+            diffs
+        }
+        _ => vec![format!(
+            "{path}: expected {}, got {}",
+            json_type_name(snapshot),
+            json_type_name(actual)
+        )],
+    }
+}
+
+fn json_type_name(v: &serde_json::Value) -> &'static str {
+    match v {
+        serde_json::Value::Null => "null",
+        serde_json::Value::Bool(_) => "boolean",
+        serde_json::Value::Number(_) => "number",
+        serde_json::Value::String(_) => "string",
+        serde_json::Value::Array(_) => "array",
+        serde_json::Value::Object(_) => "object",
+    }
+}
+
+fn snapshot_slug(method: &str, url: &str) -> String {
+    let method = method.to_lowercase();
+    let url = url
+        .trim_start_matches("https://")
+        .trim_start_matches("http://");
+    let slug: String = url
+        .chars()
+        .map(|c| if c.is_alphanumeric() { c.to_ascii_lowercase() } else { '-' })
+        .collect();
+    let slug = slug
+        .split('-')
+        .filter(|s| !s.is_empty())
+        .collect::<Vec<_>>()
+        .join("-");
+    format!("{method}-{slug}")
+}
+
+fn snapshot_exists(snapshots_dir: &Path, base_name: &str) -> bool {
+    let Ok(entries) = fs::read_dir(snapshots_dir) else {
+        return false;
+    };
+    let prefix = format!("{base_name}-");
+    entries.flatten().any(|e| {
+        e.file_name()
+            .to_string_lossy()
+            .starts_with(prefix.as_str())
+    })
+}
+
+fn save_snapshot(response: &ResponseValue, method: &str, url: &str, base_dir: &Path) {
+    write_response_snapshot(response, &snapshot_slug(method, url), base_dir);
+}
+
+// ── response snapshot helpers (mock_with_snapshot) ────────────────────────────
+
+fn load_response_snapshot(snapshots_dir: &Path, base_name: &str, method: &str, url: &str) -> Option<ResponseValue> {
+    let Ok(entries) = fs::read_dir(snapshots_dir) else {
+        return None;
+    };
+    let prefix = format!("{base_name}-");
+    let sdef_entry = entries.flatten().find(|e| {
+        let name = e.file_name().to_string_lossy().to_string();
+        name.starts_with(prefix.as_str()) && name.ends_with(".sdef")
+    })?;
+
+    let file_stem = sdef_entry
+        .file_name()
+        .to_string_lossy()
+        .trim_end_matches(".sdef")
+        .to_string();
+
+    let status_str = fs::read_to_string(sdef_entry.path()).ok()?;
+    let status: i64 = status_str.trim().parse().ok()?;
+
+    let hdef_path = snapshots_dir.join(format!("{file_stem}.hdef"));
+    let headers = if hdef_path.exists() {
+        fs::read_to_string(&hdef_path)
+            .unwrap_or_default()
+            .lines()
+            .filter_map(|line| {
+                line.split_once(": ").map(|(k, v)| (k.to_ascii_lowercase(), v.to_string()))
+            })
+            .collect()
+    } else {
+        Vec::new()
+    };
+
+    let jdef_path = snapshots_dir.join(format!("{file_stem}.jdef"));
+    let tdef_path = snapshots_dir.join(format!("{file_stem}.tdef"));
+    let body = if jdef_path.exists() {
+        fs::read_to_string(&jdef_path).unwrap_or_default()
+    } else if tdef_path.exists() {
+        fs::read_to_string(&tdef_path).unwrap_or_default()
+    } else {
+        String::new()
+    };
+
+    Some(ResponseValue {
+        status,
+        body,
+        headers,
+        duration_ms: 0,
+        method: method.to_string(),
+        url: url.to_string(),
+    })
+}
+
+fn write_response_snapshot(response: &ResponseValue, base_name: &str, base_dir: &Path) {
+    let snapshots_dir = base_dir.join("snapshots");
+
+    if snapshot_exists(&snapshots_dir, base_name) {
+        return;
+    }
+
+    if let Err(e) = fs::create_dir_all(&snapshots_dir) {
+        eprintln!("snapshot: failed to create snapshots directory: {e}");
+        return;
+    }
+
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+    let name = format!("{base_name}-{timestamp}");
+
+    let _ = fs::write(snapshots_dir.join(format!("{name}.sdef")), response.status.to_string());
+
+    if !response.headers.is_empty() {
+        let content = response
+            .headers
+            .iter()
+            .map(|(k, v)| format!("{k}: {v}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let _ = fs::write(snapshots_dir.join(format!("{name}.hdef")), content);
+    }
+
+    if !response.body.is_empty() {
+        let is_json = response.headers.iter().any(|(k, v)| {
+            k.to_ascii_lowercase() == "content-type" && v.contains("application/json")
+        });
+        let ext = if is_json { "jdef" } else { "tdef" };
+        let _ = fs::write(snapshots_dir.join(format!("{name}.{ext}")), &response.body);
+    }
+
+    println!("snapshot: snapshots/{name}");
 }

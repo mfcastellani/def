@@ -54,6 +54,8 @@ pub struct RequestValue {
     pub timeout_ms: Option<u64>,
     pub timeout_message: Option<String>,
     pub mocks: Vec<MockValue>,
+    pub snapshot: bool,
+    pub mock_with_snapshot: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -62,6 +64,8 @@ pub struct ResponseValue {
     pub body: String,
     pub headers: Vec<(String, String)>,
     pub duration_ms: i64,
+    pub method: String,
+    pub url: String,
 }
 
 impl Value {

@@ -1,0 +1,35 @@
+// Snapshot assertion example
+// Demonstrates response.assert_snapshot() for detecting structural changes
+// in API responses over time.
+//
+// First run: .snapshot() saves the response to snapshots/.
+// Every run:  assert_snapshot() validates that the current response matches
+//             the saved structure — same status, same JSON field types.
+//
+// Values can change freely; types and field names cannot.
+
+def user_mock as mock(GET, "https://api.example.com/users/1")
+  .header("Content-Type", "application/json")
+  .body_from("data/user.json")
+  .reply(200)
+
+def res as response(
+  request(GET)
+    .path("https://api.example.com/users/1")
+    .with_mocks(user_mock)
+    .snapshot()
+    .do()
+)
+
+// Validate the response structure against the saved snapshot.
+// Passes when field types match; fails when a field changes type,
+// disappears, or a new unexpected field appears.
+res.assert_snapshot()
+
+def user_id as integer(res.json("$.id"))
+def user_name as string(res.json("$.name"))
+
+print("status: {{res.status()}}")
+print("id:     {{user_id}}")
+print("name:   {{user_name}}")
+print("snapshot structure assertion passed")

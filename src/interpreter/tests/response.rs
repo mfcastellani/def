@@ -1,5 +1,6 @@
 use super::*;
 use crate::interpreter::http::call_response_method;
+use std::path::Path;
 
 #[test]
 fn response_exposes_body_and_status() {
@@ -18,8 +19,10 @@ fn response_headers_returns_array() {
             ("x-def-test".to_string(), "hello".to_string()),
         ],
         duration_ms: 0,
+        method: String::new(),
+        url: String::new(),
     };
-    let value = call_response_method(response, "headers", Vec::new()).unwrap();
+    let value = call_response_method(response, "headers", Vec::new(), Path::new(".")).unwrap();
     assert_eq!(
         value,
         Value::Array(vec![
@@ -49,9 +52,12 @@ fn response_headers_rejects_arguments() {
         body: String::new(),
         headers: Vec::new(),
         duration_ms: 0,
+        method: String::new(),
+        url: String::new(),
     };
-    let error = call_response_method(response, "headers", vec![Value::String("x".to_string())])
-        .unwrap_err();
+    let error =
+        call_response_method(response, "headers", vec![Value::String("x".to_string())], Path::new("."))
+            .unwrap_err();
     assert!(
         matches!(error, DefError::Runtime(message) if message.contains("response.headers expects 0 arguments"))
     );

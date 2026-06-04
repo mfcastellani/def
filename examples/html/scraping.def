@@ -1,0 +1,48 @@
+// HTML scraping example
+// Demonstrates body_matches, html, html_all, and html_attr on an HTML response.
+// The page body is loaded from page.html via mock.body_from().
+
+def page_mock as mock(GET, "https://deflang.dev/")
+  .header("Content-Type", "text/html; charset=utf-8")
+  .body_from("data/page.html")
+  .reply(200)
+
+def res as response(
+  request(GET)
+    .path("https://deflang.dev/")
+    .with_mocks(page_mock)
+    .do()
+)
+
+assert(res.ok())
+
+// body_matches — regex against the full body
+assert(res.body_matches("<title>.+</title>"))
+assert(res.body_matches("DefLang"))
+
+// html — text content of first matching element
+def page_title as string(res.html("title"))
+def hero_text as string(res.html("h1.hero"))
+def description as string(res.html("p"))
+
+assert(page_title == "DefLang Docs")
+assert(hero_text == "Welcome to DefLang")
+
+// html_all — all matching elements; declare as array() then assign
+def feature_list as array()
+feature_list = res.html_all("li")
+
+assert(feature_list[0] == "Typed variables")
+assert(feature_list[1] == "Fluent HTTP client")
+assert(feature_list[2] == "Mocks and snapshots")
+
+// html_attr — attribute value of first match
+def repo_url as string(res.html_attr("a", "href"))
+assert(repo_url == "https://github.com/mfcastellani/def")
+
+print("title:       {{page_title}}")
+print("hero:        {{hero_text}}")
+print("description: {{description}}")
+print("features:    {{feature_list[0]}}, {{feature_list[1]}}, {{feature_list[2]}}")
+print("repo url:    {{repo_url}}")
+print("all html assertions passed")

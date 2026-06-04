@@ -379,6 +379,8 @@ pub(super) fn default_value_for_type(type_annotation: &Type) -> Value {
             body: String::new(),
             headers: Vec::new(),
             duration_ms: 0,
+            method: String::new(),
+            url: String::new(),
         }),
     }
 }

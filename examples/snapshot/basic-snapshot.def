@@ -3,11 +3,9 @@ def language as string("Def")
 def res as response(
   request(POST)
     .path("https://httpbingo.org/anything")
-    .body_from("tdef/body.tdef")
-    .retries(3)
-    .linear_backoff(100)
-    .timeout(2000, "httpbingo timeout")
+    .body_from("jdef/body.jdef")
     .with_var(language)
+    .snapshot()
     .do()
 )
 

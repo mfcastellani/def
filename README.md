@@ -1,16 +1,34 @@
 # DefLang
 
-DefLang is a scripting language for HTTP workflows. It provides a typed, readable syntax for building requests, validating responses, and chaining multiple API calls — designed as a programmable alternative to tools like Postman or curl scripts.
+DefLang is a scripting language for API testing, HTTP workflows, mocking and snapshot validation.
+
+Unlike other tools like Postman collections, DefLang workflows are text files that can be versioned, reviewed, tested and executed from CI/CD pipelines.
+
+It also provides a typed, readable syntax for building requests, validating responses, and chaining multiple API calls. 
+
 
 ```def
-def jsonplaceholder as imported("jsonplaceholder")
+def user_mock as mock(GET, "https://api.example.com/users/1")
+  .header("Content-Type", "application/json")
+  .body_from("data/user.json")
+  .reply(200)
 
-def res as response(jsonplaceholder.create_post())
+def res as response(
+  request(GET)
+    .path("https://api.example.com/users/1")
+    .with_mocks(user_mock)
+    .do()
+)
 
-assert(res.ok())
-print("status:   {{res.describe_status()}}")
-print("duration: {{res.duration()}}ms")
-print("body:     {{res.body()}}")
+res.expect(ok)
+res.expect(status == 200)
+res.expect(duration < 5000)
+
+assert(res.json("$.id") == 1)
+assert(res.json("$.name") == "Marcelo")
+assert(res.json("$.active") == true)
+
+assert(res.json("$.score") == 9.5)
 ```
 
 Written in Rust. The language pipeline (lexer, parser, AST, interpreter) is complete and all examples run against live APIs.

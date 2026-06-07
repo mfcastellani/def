@@ -63,6 +63,7 @@ pub struct EnvVarsLoad {
 #[derive(Debug, Clone, PartialEq)]
 pub struct VariableDefinition {
     pub name: String,
+    pub is_const: bool,
     pub type_annotation: Type,
     pub initializer: Option<Expression>,
 }

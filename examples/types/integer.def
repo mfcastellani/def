@@ -45,6 +45,13 @@ assert(remainder == 2)
 assert(label == "twelve")
 print("all assertions passed")
 
+// Const — immutable integer binding
+def max_retries as const integer(3)
+assert(max_retries == 3)
+// max_retries = 5  // would fail: cannot assign to const variable
+
+print("all assertions passed")
+
 // Command-line parameter support
 // Run with: def run integer.def --param multiplier=3
 def multiplier as integer(from_cmd_param("multiplier", 1))

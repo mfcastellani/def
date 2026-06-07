@@ -49,3 +49,10 @@ assert(first == "Marcelo")
 assert(second == "Nicolas")
 assert(names[2] == "Felicia")
 assert(length_label == "three")
+
+// Const — immutable array binding; indexing and iteration still work
+def allowed as const array("GET", "POST", "DELETE")
+assert(allowed.len() == 3)
+assert(allowed[0] == "GET")
+// allowed.push("PUT")  // would fail: cannot call push() on const array
+print("all assertions passed")

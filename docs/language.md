@@ -85,6 +85,27 @@ print("ok: {{res.ok()}}")
 
 String literals cannot be nested inside `{{...}}`; use a variable instead.
 
+#### Multiline strings
+
+Use triple-quote delimiters `"""..."""` to write multi-line string literals. The leading newline after the opening `"""` is stripped. If the closing `"""` is indented, that indentation is stripped from every content line (dedent); relative indentation within the content is preserved.
+
+```def
+def body as string("""
+  {
+    "name": "Marcelo",
+    "age": 48
+  }
+  """)
+
+// Produces:
+// {
+//   "name": "Marcelo",
+//   "age": 48
+// }
+```
+
+Multiline strings produce a plain `string` value and work everywhere regular strings do, including `const` bindings and concatenation.
+
 ### boolean
 
 `true` or `false`. Boolean operators: `and`, `or`, `not`.

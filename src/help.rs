@@ -32,6 +32,7 @@ pub fn print_help() {
     println!();
     text("Topics:");
     text("  array          Ordered collection of values with indexed access and iteration");
+    text("  const          Immutable variable bindings — prevent reassignment after definition");
     text("  range          Generate an array of consecutive integers with range(start..end)");
     text("  assert         Abort execution when a boolean expression is false");
     text("  body           Request bodies from .jdef (JSON) and .tdef (text) template files");
@@ -59,7 +60,7 @@ pub fn print_help() {
     text("  response       Inspect HTTP response status, headers, and body");
     text("  retry          Retry, backoff strategies, and per-attempt timeout");
     text("  snapshot       Save response snapshot to disk; validate structure with assert_snapshot()");
-    text("  string         Text values and string operations");
+    text("  string         Text values, multiline strings, and string operations");
     text("  tuple          Key/value pairs used for headers and query parameters");
     println!();
     text("Aliases:");
@@ -76,6 +77,7 @@ pub fn print_topic(topic: &str) {
     match topic {
         "about" => print_about(),
         "array" => print_array(),
+        "const" => print_const(),
         "range" => print_range(),
         "assert" => print_assert(),
         "body" | "jdef" | "tdef" | "text" => print_body(),
@@ -191,11 +193,12 @@ fn print_array() {
     text("  Ordered collection of values with indexed access, iteration, and mutation.");
     text("  Arrays can hold mixed value types.");
     section("SYNTAX");
-    text("  def items as array                         // empty");
-    text("  def names as array(\"Marcelo\", \"Nicolas\")   // initialized");
-    text("  names.push(\"Ana\")                          // append");
-    text("  names[0]                                   // index access");
-    text("  names.get(1)                               // method access");
+    text("  def items as array                               // empty");
+    text("  def names as array(\"Marcelo\", \"Nicolas\")         // initialized");
+    text("  def names as const array(\"GET\", \"POST\")          // immutable — push() is a runtime error");
+    text("  names.push(\"Ana\")                                // append");
+    text("  names[0]                                         // index access");
+    text("  names.get(1)                                     // method access");
     section("METHODS");
     text("  len()          Number of elements");
     text("  is_empty()     True when the array has no elements");
@@ -448,6 +451,9 @@ fn print_datetime() {
     text("  year()         Read or set the year component");
     println!();
     text("  Calling any part method with an integer argument sets that component.");
+    section("SYNTAX");
+    text("  def now   as datetime               // current system time");
+    text("  def epoch as const datetime         // immutable — setter calls are a runtime error");
     section("EXAMPLE");
     text("  def now as datetime");
     println!();
@@ -544,7 +550,8 @@ fn print_float() {
     text("  supported. Mixed integer/float expressions produce float results.");
     section("SYNTAX");
     text("  def price as float(10.5)");
-    text("  def price as float        // defaults to 0.0");
+    text("  def price as float              // defaults to 0.0");
+    text("  def price as const float(10.5)  // immutable — reassignment is a runtime error");
     section("OPERATORS");
     text("  +    Addition");
     text("  -    Subtraction");
@@ -725,7 +732,8 @@ fn print_integer() {
     text("  supported. Division of two integers produces a float.");
     section("SYNTAX");
     text("  def n as integer(10)");
-    text("  def n as integer        // defaults to 0");
+    text("  def n as integer              // defaults to 0");
+    text("  def n as const integer(10)    // immutable — reassignment is a runtime error");
     section("OPERATORS");
     text("  +    Addition");
     text("  -    Subtraction");
@@ -1138,8 +1146,26 @@ fn print_string() {
     text("  String literals inside print() support {{expression}} interpolation.");
     section("SYNTAX");
     text("  def name as string(\"Marcelo\")");
-    text("  def name as string()    // defaults to empty string \"\"");
-    text("  def name as string      // same default");
+    text("  def name as string()              // defaults to empty string \"\"");
+    text("  def name as string                // same default");
+    text("  def name as const string(\"Def\")  // immutable — reassignment is a runtime error");
+    section("MULTILINE STRINGS");
+    text("  Use triple-quote delimiters \"\"\"...\"\"\" to write multi-line strings.");
+    text("  The leading newline after the opening \"\"\" is stripped automatically.");
+    text("  If the closing \"\"\" is indented, that indentation is stripped from every");
+    text("  content line (dedent). Inner lines with deeper indentation keep their");
+    text("  relative indent.");
+    println!();
+    text("  def body as string(\"\"\"");
+    text("    {");
+    text("      \"name\": \"Marcelo\"");
+    text("    }");
+    text("    \"\"\")");
+    println!();
+    text("  // Produces the string:");
+    text("  //   {");
+    text("  //     \"name\": \"Marcelo\"");
+    text("  //   }");
     section("METHODS");
     text("  from_env_var(\"VAR\")   Read the value of an environment variable");
     section("BUILTINS");
@@ -1474,6 +1500,50 @@ fn print_snapshot() {
     text("  def help inspect   Debug request and response details");
 }
 
+fn print_const() {
+    text("CONST");
+    section("DESCRIPTION");
+    text("  The const modifier makes a variable immutable after definition.");
+    text("  Any attempt to reassign it — including compound operators (+=, -=)");
+    text("  and mutation methods (push, datetime setters) — stops the script");
+    text("  with a clear runtime error.");
+    println!();
+    text("  const applies to all basic types: integer, float, string, boolean,");
+    text("  array, tuple, and datetime.");
+    section("SYNTAX");
+    text("  def name as const <type>(<value>)");
+    println!();
+    text("  def max_retries  as const integer(3)");
+    text("  def pi           as const float(3.14159)");
+    text("  def app_name     as const string(\"DefLang\")");
+    text("  def debug_mode   as const boolean(false)");
+    text("  def allowed      as const array(\"GET\", \"POST\")");
+    text("  def content_type as const tuple(\"Content-Type\", \"application/json\")");
+    text("  def frozen_date  as const datetime");
+    section("SCOPE");
+    text("  const is scoped. An outer const can be shadowed by a mutable inner");
+    text("  binding, and vice versa — they are independent bindings.");
+    println!();
+    text("  def x as const integer(1)");
+    text("  if true (");
+    text("    def x as integer(99)   // new mutable binding in this scope");
+    text("    x = 50                 // ok — modifies the inner x");
+    text("  )");
+    text("  // x = 2  // would fail — outer x is still const");
+    section("ERRORS");
+    text("  cannot assign to const variable 'x'");
+    text("  cannot call push() on const array 'items'");
+    text("  cannot call 'day()' on const datetime 'epoch'");
+    section("SEE ALSO");
+    text("  def help integer   integer type and operators");
+    text("  def help float     float type and operators");
+    text("  def help string    string type and methods");
+    text("  def help boolean   boolean type and operators");
+    text("  def help array     array type and methods");
+    text("  def help tuple     tuple type and methods");
+    text("  def help datetime  datetime type and methods");
+}
+
 fn print_tuple() {
     text("TUPLE");
     section("DESCRIPTION");
@@ -1482,6 +1552,7 @@ fn print_tuple() {
     text("  and query parameters to requests. Response headers are returned as tuples.");
     section("SYNTAX");
     text("  tuple(\"key\", value)");
+    text("  def t as const tuple(\"key\", value)  // immutable — reassignment is a runtime error");
     section("METHODS");
     text("  key()     The key string");
     text("  value()   The associated value");

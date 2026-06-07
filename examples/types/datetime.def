@@ -60,6 +60,12 @@ assert(configured.second() == 45)
 assert(label == "formatted")
 print("all assertions passed")
 
+// Const — immutable datetime binding; read-only field access still works
+def epoch as const datetime
+assert(epoch.format("hh:mm:ss") != "")
+// epoch.day(15)  // would fail: cannot call 'day()' on const datetime
+print("all assertions passed")
+
 // Command-line parameter support
 // Run with: def run datetime.def --param report_date=2026-01-01
 // or with full RFC3339: --param report_date=2026-01-01T00:00:00+00:00

@@ -58,7 +58,7 @@ cargo run -- run examples/types/integer.def
 
 ## What DefLang Does
 
-- **Typed variables** — `integer`, `float`, `string`, `boolean`, `array`, `tuple`, `datetime`
+- **Typed variables** — `integer`, `float`, `string`, `boolean`, `array`, `tuple`, `datetime`; add `const` for immutable bindings that reject reassignment at runtime; multiline strings with `"""..."""` (auto-dedent)
 - **Fluent HTTP client** — build requests with `.path()`, `.header()`, `.body_from()`, `.do()`; inspect responses with `.status()`, `.json()`, `.expect()`
 - **Control flow** — `if`/`else`, `for`, `while do`, `match`, user-defined functions; `range(1..10)` for integer ranges
 - **Retry and backoff** — `retries(n)` with `fixed`, `linear`, or `exponential` backoff and per-attempt `timeout`

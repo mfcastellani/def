@@ -62,8 +62,8 @@ pub(super) fn call_array_push_on_scoped_variable(
     name: &str,
     args: &[Value],
 ) -> DefResult<Option<Value>> {
-    for scope in scopes.iter_mut().rev() {
-        if let Some(value) = scope.get_mut(name) {
+    for frame in scopes.iter_mut().rev() {
+        if let Some(value) = frame.vars.get_mut(name) {
             return push_to_array_value(value, args).map(Some);
         }
     }

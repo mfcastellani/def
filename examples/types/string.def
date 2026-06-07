@@ -35,6 +35,44 @@ assert(greet(name) == "Hello, Marcelo")
 assert(label == "known")
 print("all assertions passed")
 
+// Const — immutable string binding
+def app_name as const string("DefLang")
+assert(app_name == "DefLang")
+// app_name = "other"  // would fail: cannot assign to const variable
+
+print("all assertions passed")
+
+// Multiline strings — triple-quote delimiter """..."""
+// The leading newline after """ is stripped automatically.
+// If the closing """ is indented, that indentation is removed from every content line.
+def body as string("""
+  {
+    "name": "Marcelo",
+    "active": true
+  }
+  """)
+
+def header as string("""
+Accept: application/json
+Content-Type: application/json
+""")
+
+assert(body == """
+{
+  "name": "Marcelo",
+  "active": true
+}
+""")
+
+assert(header == """
+Accept: application/json
+Content-Type: application/json
+""")
+
+print(body)
+print(header)
+print("all assertions passed")
+
 // Command-line parameter support
 // Run with: def run string.def --param greeting_name=World
 def greeting_name as string(from_cmd_param("greeting_name", "DefLang"))

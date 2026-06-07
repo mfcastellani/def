@@ -39,3 +39,10 @@ assert(active.key() == "Active")
 assert(active.value() == true)
 assert(key_of(age) == "Age")
 assert(age_label == "expected")
+
+// Const — immutable tuple binding
+def content_type as const tuple("Content-Type", "application/json")
+assert(content_type.key() == "Content-Type")
+assert(content_type.value() == "application/json")
+// content_type = tuple("Content-Type", "text/plain")  // would fail: cannot assign to const variable
+print("all assertions passed")

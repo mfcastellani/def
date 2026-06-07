@@ -1,5 +1,5 @@
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     fs,
     path::{Path, PathBuf},
 };
@@ -38,11 +38,27 @@ use values::{
 
 pub(crate) use values::resolve_import_path;
 
-type ScopeStack = Vec<HashMap<String, Value>>;
+pub(super) struct ScopeFrame {
+    pub(super) vars: HashMap<String, Value>,
+    pub(super) consts: HashSet<String>,
+}
+
+impl ScopeFrame {
+    pub(super) fn new() -> Self {
+        Self { vars: HashMap::new(), consts: HashSet::new() }
+    }
+
+    pub(super) fn with_vars(vars: HashMap<String, Value>) -> Self {
+        Self { vars, consts: HashSet::new() }
+    }
+}
+
+type ScopeStack = Vec<ScopeFrame>;
 
 #[derive(Debug)]
 pub struct Interpreter {
     variables: HashMap<String, Value>,
+    const_vars: HashSet<String>,
     functions: HashMap<String, FunctionDefinition>,
     imports: HashMap<String, Interpreter>,
     base_dir: PathBuf,
@@ -55,6 +71,7 @@ impl Default for Interpreter {
     fn default() -> Self {
         Self {
             variables: HashMap::new(),
+            const_vars: HashSet::new(),
             functions: HashMap::new(),
             imports: HashMap::new(),
             base_dir: PathBuf::from("."),
@@ -170,10 +187,16 @@ impl Interpreter {
             None => default_value_for_type(&variable.type_annotation),
         };
 
-        if let Some(scope) = scopes.last_mut() {
-            scope.insert(variable.name.clone(), value);
+        if let Some(frame) = scopes.last_mut() {
+            frame.vars.insert(variable.name.clone(), value);
+            if variable.is_const {
+                frame.consts.insert(variable.name.clone());
+            }
         } else {
             self.variables.insert(variable.name.clone(), value);
+            if variable.is_const {
+                self.const_vars.insert(variable.name.clone());
+            }
         }
         Ok(())
     }
@@ -192,6 +215,11 @@ impl Interpreter {
         };
 
         if let Some(current) = get_scoped_variable(scopes, name).cloned() {
+            if is_scoped_const(scopes, name) {
+                return Err(DefError::Runtime(format!(
+                    "cannot assign to const variable '{name}'"
+                )));
+            }
             let value = self.apply_assignment_operator(name, current.clone(), operator, value)?;
             let value = coerce_assignment(name, &current, value)?;
             assign_scoped_variable(scopes, name, value)?;
@@ -203,6 +231,12 @@ impl Interpreter {
                 "invalid assignment: undefined variable '{name}'"
             )));
         };
+
+        if self.const_vars.contains(name) {
+            return Err(DefError::Runtime(format!(
+                "cannot assign to const variable '{name}'"
+            )));
+        }
 
         let value = self.apply_assignment_operator(name, current.clone(), operator, value)?;
         let value = coerce_assignment(name, current, value)?;
@@ -230,6 +264,12 @@ impl Interpreter {
                 "invalid assignment: undefined imported variable '{object}.{member}'"
             )));
         };
+
+        if module.const_vars.contains(member) {
+            return Err(DefError::Runtime(format!(
+                "cannot assign to const imported variable '{object}.{member}'"
+            )));
+        }
 
         let value = apply_assignment_operator(
             &format!("{object}.{member}"),
@@ -267,7 +307,7 @@ impl Interpreter {
         let mut last_value = Value::Nil;
 
         'outer: for item in items {
-            scopes.push(HashMap::from([(for_loop.variable.clone(), item)]));
+            scopes.push(ScopeFrame::with_vars(HashMap::from([(for_loop.variable.clone(), item)])));
             for stmt in &for_loop.body {
                 match self.execute_statement(&stmt.inner, scopes) {
                     Ok(v) => last_value = v,
@@ -306,7 +346,7 @@ impl Interpreter {
                 break;
             }
 
-            scopes.push(HashMap::new());
+            scopes.push(ScopeFrame::new());
             let mut break_loop = false;
             for stmt in &while_loop.body {
                 match self.execute_statement(&stmt.inner, scopes) {
@@ -353,7 +393,7 @@ impl Interpreter {
     }
 
     fn execute_block(&mut self, body: &[Stmt], scopes: &mut ScopeStack) -> DefResult<Value> {
-        scopes.push(HashMap::new());
+        scopes.push(ScopeFrame::new());
         let mut last_value = Value::Nil;
 
         for stmt in body {
@@ -609,15 +649,15 @@ impl Interpreter {
             .map(|(_, v)| v.clone())
             .unwrap_or_default();
 
-        let mut expect_scope = HashMap::new();
-        expect_scope.insert("status".to_string(), Value::Integer(status));
-        expect_scope.insert("ok".to_string(), Value::Boolean(ok));
-        expect_scope.insert("duration".to_string(), Value::Integer(duration));
-        expect_scope.insert("size".to_string(), Value::Integer(size));
-        expect_scope.insert("body".to_string(), Value::String(body));
-        expect_scope.insert("content_type".to_string(), Value::String(content_type));
+        let mut expect_vars = HashMap::new();
+        expect_vars.insert("status".to_string(), Value::Integer(status));
+        expect_vars.insert("ok".to_string(), Value::Boolean(ok));
+        expect_vars.insert("duration".to_string(), Value::Integer(duration));
+        expect_vars.insert("size".to_string(), Value::Integer(size));
+        expect_vars.insert("body".to_string(), Value::String(body));
+        expect_vars.insert("content_type".to_string(), Value::String(content_type));
 
-        scopes.push(expect_scope);
+        scopes.push(ScopeFrame::with_vars(expect_vars));
         let result = self.evaluate_expression(&args[0], scopes);
         scopes.pop();
 
@@ -684,6 +724,11 @@ impl Interpreter {
 
         if let Expression::Identifier(object_name) = object {
             if name == "push" {
+                if is_scoped_const(scopes, object_name) || self.const_vars.contains(object_name) {
+                    return Err(DefError::Runtime(format!(
+                        "cannot call push() on const array '{object_name}'"
+                    )));
+                }
                 if let Some(value) =
                     call_array_push_on_scoped_variable(scopes, object_name, &values)?
                 {
@@ -790,10 +835,16 @@ impl Interpreter {
         name: &str,
         args: Vec<Value>,
     ) -> DefResult<Option<Value>> {
-        for scope in scopes.iter_mut().rev() {
-            let Some(value) = scope.get_mut(object_name) else {
+        for frame in scopes.iter_mut().rev() {
+            let Some(value) = frame.vars.get_mut(object_name) else {
                 continue;
             };
+
+            if frame.consts.contains(object_name) {
+                return Err(DefError::Runtime(format!(
+                    "cannot call '{name}()' on const datetime '{object_name}'"
+                )));
+            }
 
             let Value::DateTime(datetime) = value.clone() else {
                 return Ok(None);
@@ -816,6 +867,12 @@ impl Interpreter {
         let Some(value) = self.variables.get_mut(object_name) else {
             return Ok(None);
         };
+
+        if self.const_vars.contains(object_name) {
+            return Err(DefError::Runtime(format!(
+                "cannot call '{name}()' on const datetime '{object_name}'"
+            )));
+        }
 
         let Value::DateTime(datetime) = value.clone() else {
             return Ok(None);
@@ -875,13 +932,27 @@ impl Interpreter {
 }
 
 fn get_scoped_variable<'a>(scopes: &'a ScopeStack, name: &str) -> Option<&'a Value> {
-    scopes.iter().rev().find_map(|scope| scope.get(name))
+    scopes.iter().rev().find_map(|frame| frame.vars.get(name))
+}
+
+fn is_scoped_const(scopes: &ScopeStack, name: &str) -> bool {
+    for frame in scopes.iter().rev() {
+        if frame.vars.contains_key(name) {
+            return frame.consts.contains(name);
+        }
+    }
+    false
 }
 
 fn assign_scoped_variable(scopes: &mut ScopeStack, name: &str, value: Value) -> DefResult<()> {
-    for scope in scopes.iter_mut().rev() {
-        if scope.contains_key(name) {
-            scope.insert(name.to_string(), value);
+    for frame in scopes.iter_mut().rev() {
+        if frame.vars.contains_key(name) {
+            if frame.consts.contains(name) {
+                return Err(DefError::Runtime(format!(
+                    "cannot assign to const variable '{name}'"
+                )));
+            }
+            frame.vars.insert(name.to_string(), value);
             return Ok(());
         }
     }

@@ -1,4 +1,4 @@
-use std::{collections::HashMap, thread, time::Duration};
+use std::{thread, time::Duration};
 
 use crate::ast::{Expression, FunctionDefinition, Statement, Stmt};
 use crate::error::{DefError, DefResult};
@@ -6,7 +6,7 @@ use crate::lexer::Lexer;
 use crate::parser::Parser;
 use crate::value::Value;
 
-use super::{coerce_value_to_type, new_request_value, printable_value, Interpreter, ScopeStack};
+use super::{coerce_value_to_type, new_request_value, printable_value, Interpreter, ScopeFrame, ScopeStack};
 
 impl Interpreter {
     pub(super) fn call_function(
@@ -88,10 +88,10 @@ impl Interpreter {
             )));
         }
 
-        let mut function_scope = HashMap::new();
+        let mut function_scope = ScopeFrame::new();
         for (param, value) in function.params.iter().zip(values) {
             let value = coerce_value_to_type(&param.type_annotation, value)?;
-            function_scope.insert(param.name.clone(), value);
+            function_scope.vars.insert(param.name.clone(), value);
         }
 
         let mut function_scopes = vec![function_scope];

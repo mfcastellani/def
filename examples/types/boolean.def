@@ -42,6 +42,13 @@ assert((not true) == false)
 assert(label == "on")
 print("all assertions passed")
 
+// Const — immutable boolean binding
+def debug_mode as const boolean(false)
+assert(debug_mode == false)
+// debug_mode = true  // would fail: cannot assign to const variable
+
+print("all assertions passed")
+
 // Command-line parameter support
 // Run with: def run boolean.def --param feature=true
 def feature as boolean(from_cmd_param("feature", false))

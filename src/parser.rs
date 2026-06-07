@@ -122,6 +122,7 @@ impl Parser {
             return self.parse_envvars_load(name);
         }
 
+        let is_const = self.matches(&Token::Const);
         let type_annotation = self.parse_type()?;
         let initializer = if self.matches(&Token::LeftParen) {
             if self.check(&Token::RightParen)
@@ -137,12 +138,14 @@ impl Parser {
                     let expression = self.parse_postfix_expression(base)?;
                     return Ok(Statement::VariableDefinition(VariableDefinition {
                         name,
+                        is_const,
                         type_annotation,
                         initializer: Some(expression),
                     }));
                 }
                 return Ok(Statement::VariableDefinition(VariableDefinition {
                     name,
+                    is_const,
                     type_annotation,
                     initializer: None,
                 }));
@@ -155,6 +158,7 @@ impl Parser {
 
         Ok(Statement::VariableDefinition(VariableDefinition {
             name,
+            is_const,
             type_annotation,
             initializer,
         }))
@@ -920,6 +924,7 @@ mod tests {
             program.statements,
             vec![s(Statement::VariableDefinition(VariableDefinition {
                 name: "i".to_string(),
+                is_const: false,
                 type_annotation: Type::Integer,
                 initializer: None,
             }))]
@@ -934,6 +939,7 @@ mod tests {
             program.statements,
             vec![s(Statement::VariableDefinition(VariableDefinition {
                 name: "price".to_string(),
+                is_const: false,
                 type_annotation: Type::Float,
                 initializer: Some(Expression::Float(10.5)),
             }))]
@@ -990,6 +996,7 @@ mod tests {
             program.statements,
             vec![s(Statement::VariableDefinition(VariableDefinition {
                 name: "ok".to_string(),
+                is_const: false,
                 type_annotation: Type::Boolean,
                 initializer: None,
             }))]
@@ -1004,6 +1011,7 @@ mod tests {
             program.statements,
             vec![s(Statement::VariableDefinition(VariableDefinition {
                 name: "now".to_string(),
+                is_const: false,
                 type_annotation: Type::DateTime,
                 initializer: None,
             }))]
@@ -1018,6 +1026,7 @@ mod tests {
             program.statements,
             vec![s(Statement::VariableDefinition(VariableDefinition {
                 name: "ok".to_string(),
+                is_const: false,
                 type_annotation: Type::Boolean,
                 initializer: Some(Expression::Boolean(true)),
             }))]
@@ -1032,6 +1041,7 @@ mod tests {
             program.statements,
             vec![s(Statement::VariableDefinition(VariableDefinition {
                 name: "message".to_string(),
+                is_const: false,
                 type_annotation: Type::String,
                 initializer: None,
             }))]
@@ -1295,6 +1305,7 @@ mod tests {
             program.statements,
             vec![s(Statement::VariableDefinition(VariableDefinition {
                 name: "res".to_string(),
+                is_const: false,
                 type_annotation: Type::Response,
                 initializer: Some(Expression::MemberFunctionCall {
                     object: Box::new(Expression::MemberFunctionCall {
@@ -1337,6 +1348,7 @@ mod tests {
             program.statements,
             vec![s(Statement::VariableDefinition(VariableDefinition {
                 name: "res".to_string(),
+                is_const: false,
                 type_annotation: Type::Response,
                 initializer: Some(Expression::MemberFunctionCall {
                     object: Box::new(Expression::MemberFunctionCall {
@@ -1368,6 +1380,7 @@ mod tests {
             program.statements,
             vec![s(Statement::VariableDefinition(VariableDefinition {
                 name: "n".to_string(),
+                is_const: false,
                 type_annotation: Type::Integer,
                 initializer: Some(Expression::FunctionCall {
                     name: "sum".to_string(),

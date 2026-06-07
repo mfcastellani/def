@@ -4,6 +4,7 @@ use crate::error::{DefError, DefResult};
 pub enum Token {
     Def,
     As,
+    Const,
     Function,
     Imported,
     EnvVars,
@@ -196,7 +197,14 @@ impl Lexer {
                         tokens.push((Token::Dot, line));
                     }
                 }
-                '"' => tokens.push((self.read_string(line)?, line)),
+                '"' => {
+                    if self.peek_next() == Some('"') && self.peek_offset(2) == Some('"') {
+                        self.advance(); self.advance(); self.advance();
+                        tokens.push((self.read_multiline_string(line)?, line));
+                    } else {
+                        tokens.push((self.read_string(line)?, line));
+                    }
+                }
                 ch if ch.is_ascii_digit() => tokens.push((self.read_numeric_literal()?, line)),
                 ch if is_identifier_start(ch) => tokens.push((self.read_identifier(), line)),
                 other => {
@@ -209,6 +217,40 @@ impl Lexer {
 
         tokens.push((Token::Eof, self.line));
         Ok(tokens)
+    }
+
+    fn read_multiline_string(&mut self, start_line: usize) -> DefResult<Token> {
+        let mut value = String::new();
+
+        loop {
+            match self.peek() {
+                None => {
+                    return Err(DefError::Lex(format!(
+                        "unterminated multiline string literal starting at line {start_line}"
+                    )));
+                }
+                Some('"') if self.peek_next() == Some('"') && self.peek_offset(2) == Some('"') => {
+                    self.advance();
+                    self.advance();
+                    self.advance();
+                    break;
+                }
+                Some('\r') => {
+                    self.advance();
+                }
+                Some('\n') => {
+                    self.line += 1;
+                    value.push('\n');
+                    self.advance();
+                }
+                Some(ch) => {
+                    value.push(ch);
+                    self.advance();
+                }
+            }
+        }
+
+        Ok(Token::String(process_multiline_string(value)))
     }
 
     fn read_string(&mut self, start_line: usize) -> DefResult<Token> {
@@ -273,6 +315,7 @@ impl Lexer {
         match text.as_str() {
             "def" => Token::Def,
             "as" => Token::As,
+            "const" => Token::Const,
             "function" => Token::Function,
             "imported" => Token::Imported,
             "envvars" => Token::EnvVars,
@@ -309,6 +352,10 @@ impl Lexer {
         self.input.get(self.position + 1).copied()
     }
 
+    fn peek_offset(&self, offset: usize) -> Option<char> {
+        self.input.get(self.position + offset).copied()
+    }
+
     fn advance(&mut self) {
         self.position += 1;
     }
@@ -321,6 +368,41 @@ impl Lexer {
             self.advance();
         }
     }
+}
+
+fn process_multiline_string(raw: String) -> String {
+    // Strip the leading newline that typically follows the opening """
+    let s = raw.strip_prefix('\n').unwrap_or(&raw);
+
+    let lines: Vec<&str> = s.split('\n').collect();
+
+    // Determine content lines: exclude the last line if it's all whitespace
+    // (it's the indentation before the closing """)
+    let (content_lines, trailing_indent) = match lines.last() {
+        Some(last) if last.chars().all(char::is_whitespace) => {
+            (&lines[..lines.len() - 1], *last)
+        }
+        _ => (&lines[..], ""),
+    };
+
+    // Common indentation = minimum leading-whitespace count among non-empty content lines.
+    // If the closing """ is indented, also factor that in so content dedents accordingly.
+    let closing_indent = trailing_indent.len();
+    let content_indent = content_lines
+        .iter()
+        .filter(|l| !l.trim().is_empty())
+        .map(|l| l.len() - l.trim_start_matches(|c: char| c == ' ' || c == '\t').len())
+        .min()
+        .unwrap_or(0);
+    let strip = content_indent.min(closing_indent.max(content_indent));
+
+    // Strip common indent from each content line
+    let stripped: Vec<&str> = content_lines
+        .iter()
+        .map(|l| if l.len() >= strip { &l[strip..] } else { l.trim_start() })
+        .collect();
+
+    stripped.join("\n")
 }
 
 fn is_identifier_start(ch: char) -> bool {
@@ -528,5 +610,42 @@ mod tests {
                 Token::Eof
             ]
         );
+    }
+
+    #[test]
+    fn lexes_multiline_string() {
+        let src = "\"\"\"hello\nworld\"\"\"";
+        assert_eq!(
+            tokenize(src),
+            vec![Token::String("hello\nworld".to_string()), Token::Eof]
+        );
+    }
+
+    #[test]
+    fn multiline_string_strips_leading_newline() {
+        // Opening """ immediately followed by a newline — that newline is stripped
+        let src = "\"\"\"\nhello\nworld\n\"\"\"";
+        assert_eq!(
+            tokenize(src),
+            vec![Token::String("hello\nworld".to_string()), Token::Eof]
+        );
+    }
+
+    #[test]
+    fn multiline_string_dedents_to_closing_indent() {
+        // Content and closing """ are indented by 2 spaces; dedent should strip them
+        let src = "\"\"\"\n  hello\n  world\n  \"\"\"";
+        assert_eq!(
+            tokenize(src),
+            vec![Token::String("hello\nworld".to_string()), Token::Eof]
+        );
+    }
+
+    #[test]
+    fn multiline_string_error_on_unterminated() {
+        let result = Lexer::new("\"\"\"hello").tokenize();
+        assert!(result.is_err());
+        let msg = result.unwrap_err().to_string();
+        assert!(msg.contains("unterminated multiline string"));
     }
 }

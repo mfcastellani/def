@@ -42,6 +42,13 @@ assert(half == 5.0)
 assert(label == "ten")
 print("all assertions passed")
 
+// Const — immutable float binding
+def pi as const float(3.14159)
+assert(pi == 3.14159)
+// pi = 3.0  // would fail: cannot assign to const variable
+
+print("all assertions passed")
+
 // Command-line parameter support
 // Run with: def run float.def --param tax=0.15
 def tax as float(from_cmd_param("tax", 0.0))

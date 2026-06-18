@@ -12,7 +12,7 @@ use crate::ast::{
 use crate::error::{DefError, DefResult};
 use crate::lexer::Lexer;
 use crate::parser::Parser;
-use crate::value::Value;
+use crate::value::{MockValue, Value};
 
 mod collections;
 mod datetime;
@@ -108,6 +108,20 @@ impl Interpreter {
     pub fn with_params(mut self, params: HashMap<String, String>) -> Self {
         self.params = params;
         self
+    }
+
+    /// Returns all global mock variables defined in this interpreter after execution.
+    pub fn mocks(&self) -> Vec<(String, MockValue)> {
+        self.variables
+            .iter()
+            .filter_map(|(name, v)| {
+                if let Value::Mock(m) = v {
+                    Some((name.clone(), m.clone()))
+                } else {
+                    None
+                }
+            })
+            .collect()
     }
 
     pub fn interpret(&mut self, program: &Program) -> DefResult<Value> {
@@ -500,6 +514,7 @@ impl Interpreter {
                     vars: Vec::new(),
                     delay_ms: 0,
                     configured: false,
+                    snapshot_path: None,
                 }))
             }
             Expression::Identifier(name) => {

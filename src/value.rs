@@ -29,6 +29,8 @@ pub struct MockValue {
     pub vars: Vec<(String, String)>,
     pub delay_ms: u64,
     pub configured: bool,
+    /// Future: path to a snapshot file used by `def server` to replay recorded responses.
+    pub snapshot_path: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Default)]

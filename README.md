@@ -45,6 +45,7 @@ This installs the `def` binary:
 def run workflow.def
 def run workflow.def --param env=staging
 def check workflow.def        # dry-run syntax check
+def server mocks.def          # start a local mock server
 def help request              # built-in reference
 ```
 
@@ -62,7 +63,7 @@ cargo run -- run examples/types/integer.def
 - **Fluent HTTP client** — build requests with `.path()`, `.header()`, `.body_from()`, `.do()`; inspect responses with `.status()`, `.json()`, `.expect()`
 - **Control flow** — `if`/`else`, `for`, `while do`, `match`, user-defined functions; `range(1..10)` for integer ranges
 - **Retry and backoff** — `retries(n)` with `fixed`, `linear`, or `exponential` backoff and per-attempt `timeout`
-- **Mocks** — intercept HTTP calls with pre-configured responses for testing and offline workflows
+- **Mocks** — intercept HTTP calls with pre-configured responses for testing and offline workflows; run `def server mocks.def` to expose mocks as a real local HTTP server
 - **File templates** — `.hdef` (headers), `.qdef` (query strings), `.jdef` (JSON body), `.tdef` (text body) with `{{variable}}` substitution
 - **Imports** — split workflows into modules; share helpers across files
 - **Environment variables** — load defaults from `.edef` files, override with system env
@@ -84,9 +85,62 @@ cargo run -- run examples/types/integer.def
 | [Imports](docs/imports.md) | Multi-file workflows and module organization |
 | [Environment Variables](docs/envvars.md) | `.edef` files and `from_env_var` |
 | [Parameters](docs/params.md) | `--param` and `from_cmd_param` |
-| [CLI Reference](docs/cli.md) | `run`, `check`, `help` subcommands |
+| [CLI Reference](docs/cli.md) | `run`, `check`, `server`, `help` subcommands |
 
 The built-in `def help <topic>` command also covers everything above from the terminal.
+
+## Mock Server
+
+`def server` turns any `.def` file into a running HTTP server. Every mock declared at the top level becomes an endpoint:
+
+```bash
+def server mocks.def
+def server mocks.def --port 3000
+```
+
+```
+Def mock server running at http://localhost:8765
+Loaded mocks:
+  DELETE /users/1 -> 204
+  GET    /health  -> 200
+  GET    /users   -> 200
+  POST   /users   -> 201
+
+Listening on 0.0.0.0:8765 — press Ctrl+C to stop
+```
+
+Each request is logged: `[127.0.0.1:54321] GET /users -> 200 (1ms)`
+
+**Mocks file example** (`examples/server/mocks.def`):
+
+```def
+def list_users as mock(GET, "/users")
+  .header("Content-Type", "application/json")
+  .reply(200, """
+[
+  {"id": 1, "name": "Marcelo"},
+  {"id": 2, "name": "Ana"}
+]
+""")
+
+def create_user as mock(POST, "/users")
+  .header("Content-Type", "application/json")
+  .reply(201, """{"id": 3, "name": "Nicolas"}""")
+
+def slow_report as mock(GET, "/reports")
+  .delay(300)
+  .reply(200, """{"generated": true}""")
+```
+
+**Matching rules:**
+- Method match is case-insensitive
+- Path match is exact; query string is ignored
+- Full URLs (`https://api.example.com/users`) and paths (`/users`) both work
+- Unknown path → `404 mock not found: GET /path`
+
+**Startup validation:**
+- Mock without `.reply()` or `.fail()` → error
+- Two mocks with the same method + path → error
 
 ## Examples
 
@@ -105,6 +159,7 @@ examples/
 ├── env/               # .edef usage
 ├── debugging/         # inspect() for request and response
 ├── mocks/             # mock HTTP responses for testing
+├── server/            # def server — standalone mock server examples
 └── jsonplaceholder/   # end-to-end workflow against a real API
 ```
 

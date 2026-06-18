@@ -72,6 +72,13 @@ pub(super) fn call_mock_method(
                 "mock.delay expects 1 integer argument in milliseconds".to_string(),
             )),
         },
+        // Stores a snapshot path for future replay support in `def server`.
+        "from_snapshot" => {
+            let path = single_string_arg("mock.from_snapshot", args)?;
+            mock.snapshot_path = Some(path);
+            mock.configured = true;
+            Ok(Value::Mock(mock))
+        }
         _ => Err(DefError::Runtime(format!("unknown mock method '{name}'"))),
     }
 }

@@ -4,6 +4,7 @@ mod help;
 mod interpreter;
 mod lexer;
 mod parser;
+mod server;
 mod value;
 
 use std::{collections::HashMap, fs, path::Path, process};
@@ -49,6 +50,14 @@ enum Command {
         /// Path to the .def file to format
         file: String,
     },
+    /// Start a local HTTP mock server from a .def file
+    Server {
+        /// Path to the .def file that declares the mocks
+        file: String,
+        /// Port to listen on (default: 8765)
+        #[arg(long, default_value_t = 8765)]
+        port: u16,
+    },
     /// Show DefLang language help and topic list
     Help {
         /// Topic to show details for (omit to list all topics)
@@ -89,6 +98,12 @@ fn main() {
         Command::Fmt { file } => {
             eprintln!("fmt: not yet implemented (file: {file})");
             process::exit(1);
+        }
+        Command::Server { file, port } => {
+            if let Err(error) = server::serve(&file, port) {
+                eprintln!("{error}");
+                process::exit(1);
+            }
         }
         Command::Help { topic } => match topic {
             None => help::print_help(),

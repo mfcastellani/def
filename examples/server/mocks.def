@@ -1,0 +1,56 @@
+// Mock server example using external template files for headers and bodies.
+// Template variables are substituted into .hdef/.jdef/.tdef files at startup,
+// not per-request — they reflect the values set here.
+//
+// Run with: def server examples/server/mocks.def
+//      or:  def server examples/server/mocks.def --port 3000
+
+// Variables substituted into .jdef templates via with_var()
+def user_id as integer(1)
+def user_name as string("Marcelo")
+def user_email as string("marcelo@example.com")
+
+def new_user_id as integer(3)
+def new_user_name as string("Nicolas")
+def new_user_email as string("nicolas@example.com")
+
+// GET /users — headers from .hdef, static body from .jdef
+def list_users as mock(GET, "/users")
+  .headers_from("users_response.hdef")
+  .body_from("users.jdef")
+  .reply(200)
+
+// GET /users/1 — headers from .hdef, body from .jdef with template variables
+//   user.jdef contains: {"id": {{user_id}}, "name": "{{user_name}}", ...}
+def get_user as mock(GET, "/users/1")
+  .with_var(user_id)
+  .with_var(user_name)
+  .with_var(user_email)
+  .headers_from("users_response.hdef")
+  .body_from("user.jdef")
+  .reply(200)
+
+// POST /users — 201 Created, body from .jdef with template variables
+def create_user as mock(POST, "/users")
+  .with_var(new_user_id)
+  .with_var(new_user_name)
+  .with_var(new_user_email)
+  .headers_from("users_response.hdef")
+  .body_from("created_user.jdef")
+  .reply(201)
+
+// DELETE /users/1 — 204 No Content, no body
+def delete_user as mock(DELETE, "/users/1")
+  .reply(204)
+
+// GET /health — plain text body from .tdef
+def health as mock(GET, "/health")
+  .header("Content-Type", "text/plain")
+  .body_from("health.tdef")
+  .reply(200)
+
+// GET /reports — slow endpoint with delay, inline body
+def slow_report as mock(GET, "/reports")
+  .header("Content-Type", "application/json")
+  .delay(300)
+  .reply(200, """{"report": "done", "rows": 42}""")

@@ -59,6 +59,7 @@ pub fn print_help() {
     text("  json           JSON path assertions on response bodies");
     text("  response       Inspect HTTP response status, headers, and body");
     text("  retry          Retry, backoff strategies, and per-attempt timeout");
+    text("  server         Start a local HTTP mock server from a .def file");
     text("  snapshot       Save response snapshot to disk; validate structure with assert_snapshot()");
     text("  string         Text values, multiline strings, and string operations");
     text("  tuple          Key/value pairs used for headers and query parameters");
@@ -104,6 +105,7 @@ pub fn print_topic(topic: &str) {
         "request" => print_request(),
         "response" => print_response(),
         "retry" => print_retry(),
+        "server" => print_server(),
         "snapshot" => print_snapshot(),
         "string" => print_string(),
         "tuple" => print_tuple(),
@@ -1083,6 +1085,54 @@ fn print_response() {
     text("    print(\"failed with status: {{status}}\")");
     text("    print(\"body: {{res.body()}}\")");
     text("  )");
+}
+
+fn print_server() {
+    text("SERVER");
+    section("DESCRIPTION");
+    text("  Start a local HTTP mock server that responds to requests using mocks defined");
+    text("  in a .def file. Useful for frontend development, integration testing, and");
+    text("  offline workflows without a real backend.");
+    section("USAGE");
+    text("  def server <file>              Start server on default port 8765");
+    text("  def server <file> --port 3000  Start server on a custom port");
+    section("MOCK SYNTAX");
+    text("  Mocks are declared at the top level of the .def file using the same syntax");
+    text("  as inline mocks. They must have a .reply() or .fail() call.");
+    println!();
+    text("  def list_users as mock(GET, \"/users\")");
+    text("    .header(\"Content-Type\", \"application/json\")");
+    text("    .reply(200, \"\"\"{\"users\": []}\"\"\")\n");
+    println!();
+    text("  def create_user as mock(POST, \"/users\")");
+    text("    .header(\"Content-Type\", \"application/json\")");
+    text("    .reply(201, \"\"\"{\"id\": 1}\"\"\")\n");
+    println!();
+    text("  // Add a simulated delay (milliseconds)");
+    text("  def slow as mock(GET, \"/reports\")");
+    text("    .delay(300)");
+    text("    .reply(200, \"ok\")");
+    section("MATCHING RULES");
+    text("  - Method match is case-insensitive");
+    text("  - Path match is exact (query string is ignored in this version)");
+    text("  - Full URL or path-only both work:");
+    text("    mock(GET, \"https://api.example.com/users\")  →  matches GET /users");
+    text("    mock(GET, \"/users\")                          →  matches GET /users");
+    text("  - If no mock matches: 404 with body 'mock not found: METHOD /path'");
+    section("STARTUP VALIDATION");
+    text("  The server refuses to start if:");
+    text("  - A mock has no .reply() or .fail() configured");
+    text("  - Two mocks share the same METHOD + path");
+    section("REQUEST LOG");
+    text("  Each request is logged to stdout:");
+    text("  [127.0.0.1:54321] GET /users -> 200 (1ms)");
+    section("EXAMPLE");
+    text("  def server examples/server/mocks.def");
+    text("  def server examples/server/mocks.def --port 3000");
+    println!();
+    text("  # Then in another terminal:");
+    text("  curl http://localhost:8765/users");
+    text("  curl -X POST http://localhost:8765/users");
 }
 
 fn print_retry() {

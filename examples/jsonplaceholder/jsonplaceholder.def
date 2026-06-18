@@ -1,8 +1,8 @@
 // JSONPlaceholder API module
 // Functions return the raw response so the caller can inspect and assert.
 
-def base_url as string("https://jsonplaceholder.typicode.com")
-def title    as string("Def Language Post")
+def base_url as const string("https://jsonplaceholder.typicode.com")
+def title    as const string("Def Language Post")
 
 def create_post as function() (
   def now        as datetime
@@ -20,11 +20,15 @@ def create_post as function() (
 )
 
 def get_post as function(id as string) (
-  request(GET)
+  def res as response(request(GET)
     .path(concat(base_url, "/posts/", id))
     .headers_from("hdef/common.hdef")
     .snapshot()
     .do()
+  )
+
+  res.assert_snapshot()
+  res  
 )
 
 def list_posts as function(user_id as string) (

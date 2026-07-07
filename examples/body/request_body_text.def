@@ -1,5 +1,14 @@
+// Plain-text request body with template substitution
+// .body_from("file.tdef") loads the request body from a .tdef file and sets
+// Content-Type: text/plain automatically.
+// .with_var(variable) registers a variable for {{variable}} substitution in
+// the body template.
+//
+// tdef/body.tdef contains raw text with {{language}} placeholder.
+
 def language as string("Def")
 
+// First request: language == "Def"
 def res as response(
   request(POST)
     .path("https://httpbingo.org/anything")
@@ -17,6 +26,7 @@ print("content-type:  {{res.content_type()}}")
 print("body contains '{{search}}': {{res.body_contains(search)}}")
 print("body:          {{res.body()}}")
 
+// Second request: inner scope shadows 'language' for this request only.
 def res_with_var as response(
   def language as string("Def Language")
 

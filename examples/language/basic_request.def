@@ -1,5 +1,12 @@
-// response object
+// Basic HTTP request and response
+// Shows two styles for making a request:
+//   1. Declare a named request variable, then chain methods and call .do().
+//   2. Declare the request inline inside a response(...) initializer.
+//
+// response exposes .body(), .status(), .ok(), .duration(), and more.
 
+// Style 1: named request variable — useful when you need to reuse or
+// configure the request across multiple lines before executing it.
 def r as request(GET)
 
 def res as response(
@@ -11,9 +18,8 @@ print(res.status())
 
 assert(res.status() == 200)
 
-
-// request.do() coerces to response body in string context
-
+// Style 2: assign .do() directly to a string — coerces to the response body.
+// Useful when only the body text is needed and status/headers can be ignored.
 def response_body as string()
 
 def r2 as request(GET)

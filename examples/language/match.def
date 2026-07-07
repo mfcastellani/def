@@ -1,7 +1,15 @@
+// match expression
+// match compares a value against literal patterns in order and evaluates to
+// the first branch that matches. _ is the catch-all (required when not all
+// values are covered). match works as an expression, so it can appear on the
+// right-hand side of assignments, inside variable initializers, or in
+// function bodies.
+
 def status as integer(200)
 
 def message as string()
 
+// Assign the matched string directly to 'message'.
 message = match status (
   200 => "ok",
   404 => "not found",

@@ -1,0 +1,18 @@
+// Append lines to an existing text file
+// file(APPEND) opens the file at the end; previous content is preserved.
+// The file is created if it does not already exist.
+// flush() writes buffered data to disk without closing — useful mid-session
+// to ensure data is persisted even if later operations fail.
+// Run from the examples/text_files/ directory: def run append_file.def
+// (run write_file.def first to create output.txt)
+
+def f as file(APPEND).path("output.txt")
+f.open()
+
+f.write("Appended line one.\n")
+f.write("Appended line two.\n")
+f.flush()   // persist now without closing
+
+f.close()
+
+print("Lines appended successfully.")

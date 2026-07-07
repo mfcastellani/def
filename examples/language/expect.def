@@ -1,14 +1,28 @@
+// res.expect() — inline response assertions
+// expect(predicate) evaluates a boolean expression in a scope where the
+// following response variables are in scope:
+//   status      — integer HTTP status code
+//   ok          — boolean, true when status is 2xx
+//   duration    — integer milliseconds
+//   size        — integer body size in bytes
+//   body        — string response body
+//   content_type — string Content-Type header value
+//
+// If the predicate is false, execution stops with a descriptive error.
+// expect() returns the response, so calls can be chained.
+
 def res as response(
   request(GET)
     .path("https://httpbingo.org/anything")
     .do()
 )
 
+// Individual expect calls — each aborts on failure with a clear message.
 res.expect(ok)
 res.expect(status == 200)
 res.expect(duration < 5000)
 
-// expect calls can be chained
+// Chained — equivalent to the three calls above.
 res.expect(ok).expect(status == 200).expect(duration < 5000)
 
 print("all expectations passed")

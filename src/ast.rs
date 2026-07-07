@@ -113,6 +113,7 @@ pub enum Type {
     Request,
     Response,
     Mock,
+    File,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -129,6 +130,9 @@ pub enum Expression {
     Mock {
         method: String,
         url: Box<Expression>,
+    },
+    File {
+        mode: String,
     },
     Identifier(String),
     Binary {

@@ -1,3 +1,14 @@
+// .mock_with_snapshot() — offline snapshot replay
+// On the first run, the live request is made and the response is saved as a
+// snapshot (same as .snapshot()). On subsequent runs, the saved snapshot is
+// replayed as a mock — no network request is made.
+//
+// This is useful for:
+//   - Tests that should not depend on an external service being available.
+//   - Locking in a known-good response for regression testing.
+//
+// To refresh, delete the snapshot file in snapshots/ and re-run once online.
+
 def language as string("Def")
 
 def res as response(
@@ -5,7 +16,7 @@ def res as response(
     .path("https://httpbingo.org/anything")
     .body_from("jdef/body.jdef")
     .with_var(language)
-    .mock_with_snapshot()
+    .mock_with_snapshot()   // live on first run, replayed from snapshot after
     .do()
 )
 

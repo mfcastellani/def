@@ -3,6 +3,20 @@ use chrono::{DateTime, Local};
 use crate::ast::Type;
 
 #[derive(Debug, Clone, PartialEq)]
+pub enum FileMode {
+    Read,
+    Write,
+    Append,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct FileValue {
+    pub path: Option<String>,
+    pub mode: FileMode,
+    pub is_open: bool,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub enum Value {
     Integer(i64),
     Float(f64),
@@ -15,6 +29,7 @@ pub enum Value {
     RequestHandle(String),
     Response(ResponseValue),
     Mock(MockValue),
+    File(FileValue),
     Uninitialized(Type),
     Nil,
 }
@@ -84,6 +99,7 @@ impl Value {
             Value::RequestHandle(_) => Some(Type::Request),
             Value::Response(_) => Some(Type::Response),
             Value::Mock(_) => Some(Type::Mock),
+            Value::File(_) => Some(Type::File),
             Value::Uninitialized(type_annotation) => Some(type_annotation.clone()),
             Value::Nil => None,
         }

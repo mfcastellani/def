@@ -1,0 +1,16 @@
+// Read a text file line by line
+// file(READ) opens an existing file for reading.
+// eof() returns true once all lines have been consumed.
+// read_line() returns the next line with the trailing newline stripped.
+// Run from the examples/text_files/ directory: def run read_file.def
+
+def f as file(READ).path("sample.txt")
+f.open()
+
+def line as string
+while not f.eof() do (
+  line = f.read_line()   // trailing \n is stripped automatically
+  print(line)
+)
+
+f.close()

@@ -28,6 +28,7 @@ pub enum Token {
     TypeDateTime,
     TypeRequest,
     TypeMock,
+    TypeFile,
     Identifier(String),
     Integer(i64),
     Float(f64),
@@ -262,6 +263,21 @@ impl Lexer {
                 self.advance();
                 return Ok(Token::String(value));
             }
+            if ch == '\\' {
+                self.advance();
+                match self.peek() {
+                    Some('n') => { value.push('\n'); self.advance(); }
+                    Some('t') => { value.push('\t'); self.advance(); }
+                    Some('r') => { value.push('\r'); self.advance(); }
+                    Some('\\') => { value.push('\\'); self.advance(); }
+                    Some('"') => { value.push('"'); self.advance(); }
+                    Some(ch) => { value.push('\\'); value.push(ch); self.advance(); }
+                    None => return Err(DefError::Lex(format!(
+                        "unterminated string literal at line {start_line}"
+                    ))),
+                }
+                continue;
+            }
             value.push(ch);
             self.advance();
         }
@@ -338,6 +354,7 @@ impl Lexer {
             "datetime" => Token::TypeDateTime,
             "request" => Token::TypeRequest,
             "mock" => Token::TypeMock,
+            "file" => Token::TypeFile,
             "true" => Token::Boolean(true),
             "false" => Token::Boolean(false),
             _ => Token::Identifier(text),

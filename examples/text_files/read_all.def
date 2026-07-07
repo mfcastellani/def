@@ -1,0 +1,12 @@
+// Read an entire text file at once
+// read_all() returns the complete remaining file content as a single string.
+// Use this when you need the full text rather than iterating line by line.
+// Run from the examples/text_files/ directory: def run read_all.def
+
+def f as file(READ).path("sample.txt")
+f.open()
+
+def content as string(f.read_all())
+print(content)
+
+f.close()

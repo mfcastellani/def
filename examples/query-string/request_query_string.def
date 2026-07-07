@@ -1,7 +1,16 @@
+// Query string parameters
+// Two approaches for attaching query parameters:
+//   1. Inline: .query_string(tuple("key", "value")) — one call per parameter,
+//      chainable. Values can be computed expressions (e.g. a formatted datetime).
+//   2. From file: .query_string_from("file.qdef") — loads parameters from a
+//      .qdef file; supports {{variable}} substitution via .with_var().
+//      Additional .query_string() calls can be chained after .query_string_from().
+
 def r as request(GET)
 
 def date as datetime
 
+// Approach 1 — inline parameters; datetime formatted at request time
 def res as response(
   r.path("https://httpbingo.org/anything")
    .query_string(tuple("search", "def language"))
@@ -19,6 +28,9 @@ print("content-type:  {{res.content_type()}}")
 print("body contains '{{search}}': {{res.body_contains(search)}}")
 print("body:          {{res.body()}}")
 
+// Approach 2 — parameters from qdef/query-string.qdef with template substitution,
+// plus an additional inline parameter appended after the file-loaded ones.
+// qdef/query-string.qdef contains: search={{search_term}}&category=abc
 def res_from_file as response(
   def search_term as string("def language")
 

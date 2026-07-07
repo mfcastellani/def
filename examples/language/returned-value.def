@@ -1,3 +1,8 @@
+// Function return values
+// Functions do not use a 'return' keyword. The last evaluated expression in
+// the function body is implicitly the return value. Here, 'a + b' is that
+// last expression, so sum(10, 12) evaluates to 22.
+
 def sum as function(a as integer, b as integer) (
   a + b
 )

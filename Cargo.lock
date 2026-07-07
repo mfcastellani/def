@@ -233,7 +233,7 @@ dependencies = [
 
 [[package]]
 name = "deflang"
-version = "0.8.0"
+version = "0.8.2"
 dependencies = [
  "chrono",
  "clap",

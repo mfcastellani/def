@@ -59,7 +59,7 @@ cargo run -- run examples/types/integer.def
 
 ## What DefLang Does
 
-- **Typed variables** — `integer`, `float`, `string`, `boolean`, `array`, `tuple`, `datetime`; add `const` for immutable bindings that reject reassignment at runtime; multiline strings with `"""..."""` (auto-dedent)
+- **Typed variables** — `integer`, `float`, `string`, `boolean`, `array`, `tuple`, `datetime`; add `const` for immutable bindings that reject reassignment at runtime; multiline strings with `"""..."""` (auto-dedent); string escape sequences (`\n`, `\t`, `\\`, `\"`)
 - **Fluent HTTP client** — build requests with `.path()`, `.header()`, `.body_from()`, `.do()`; inspect responses with `.status()`, `.json()`, `.expect()`
 - **Control flow** — `if`/`else`, `for`, `while do`, `match`, user-defined functions; `range(1..10)` for integer ranges
 - **Retry and backoff** — `retries(n)` with `fixed`, `linear`, or `exponential` backoff and per-attempt `timeout`
@@ -72,6 +72,7 @@ cargo run -- run examples/types/integer.def
 - **JSON path** — extract and assert on response fields with `res.json("$.user.name")`
 - **Snapshot assertions** — save a response baseline with `.snapshot()` and validate structural consistency on every run with `res.assert_snapshot()`
 - **HTML support** — query HTML responses with CSS selectors (`res.html()`, `res.html_all()`, `res.html_attr()`), regex matching (`res.body_matches()`), and submit forms with `.form_from()` and `.fdef` files
+- **Text files** — read, write, and append text files with `file(READ|WRITE|APPEND)`; line-by-line iteration with `eof()` and `read_line()`, or whole-file with `read_all()`
 
 ## Documentation
 
@@ -86,6 +87,7 @@ cargo run -- run examples/types/integer.def
 | [Environment Variables](docs/envvars.md) | `.edef` files and `from_env_var` |
 | [Parameters](docs/params.md) | `--param` and `from_cmd_param` |
 | [CLI Reference](docs/cli.md) | `run`, `check`, `server`, `help` subcommands |
+| [Text Files](docs/text_files.md) | Read, write, and append text files with `file(READ\|WRITE\|APPEND)` |
 
 The built-in `def help <topic>` command also covers everything above from the terminal.
 
@@ -160,6 +162,7 @@ examples/
 ├── debugging/         # inspect() for request and response
 ├── mocks/             # mock HTTP responses for testing
 ├── server/            # def server — standalone mock server examples
+├── text_files/        # file type — read, write, and append text files
 └── jsonplaceholder/   # end-to-end workflow against a real API
 ```
 

@@ -1,8 +1,13 @@
+// delay() — pause script execution
+// delay(ms) suspends the script for the given number of milliseconds.
+// Useful for rate-limiting requests, simulating wait times, or adding
+// pauses between retried operations.
+
 def wait_ms as integer(500)
 def ok as boolean(false)
 
 print("Start delay")
-delay(wait_ms)
+delay(wait_ms)   // pauses 500 ms
 print("End delay")
 
 ok = true

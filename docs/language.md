@@ -73,6 +73,16 @@ def t as string(f.to_string())         // t == "9.5"
 
 ### string
 
+String literals support escape sequences:
+
+| Sequence | Character       |
+|----------|-----------------|
+| `\n`     | Newline         |
+| `\t`     | Tab             |
+| `\r`     | Carriage return |
+| `\\`     | Backslash       |
+| `\"`     | Double quote    |
+
 String values support template interpolation in `print`. Any valid Def expression works inside `{{...}}`:
 
 ```def

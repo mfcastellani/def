@@ -1,3 +1,12 @@
+// Request headers
+// Two approaches for attaching headers:
+//   1. Inline: .header(tuple("Name", "Value")) — one call per header, chainable.
+//   2. From file: .headers_from("file.hdef") — loads all headers from a .hdef
+//      file; supports {{variable}} substitution via .with_var().
+//
+// httpbingo.org/headers echoes back all request headers it received.
+
+// Approach 1 — inline headers
 def r as request(GET)
 
 def res as response(
@@ -16,6 +25,8 @@ print("content-type:  {{res.content_type()}}")
 print("body contains '{{search}}': {{res.body_contains(search)}}")
 print("body:          {{res.body()}}")
 
+// Approach 2 — headers loaded from hdef/headers.hdef with template substitution
+// hdef/headers.hdef contains: Accept: {{accept_header}}
 def res_from_file as response(
   def accept_header as string("application/json")
 

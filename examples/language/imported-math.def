@@ -1,5 +1,13 @@
+// Imports — using a module from another file
+// imported("relative/path") loads a .def file as a module and exposes its
+// top-level functions and variables via the dot operator.
+// Relative paths are resolved from the directory of the importing file.
+//
+// See imports/math.def for the module definition.
+
 def math as imported("imports/math")
 
+// Module variables can be read and written through the module reference.
 math.variable = "Marcelo"
 
 print("add(10, 12)      = {{math.add(10, 12)}}")

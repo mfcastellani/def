@@ -1,3 +1,11 @@
+// Retry and backoff
+// .retries(n) retries a failed request up to n times.
+// Backoff strategies — choose one:
+//   .fixed_backoff(ms)       — same wait between every attempt
+//   .linear_backoff(ms)      — wait grows by ms on each attempt (ms, 2ms, 3ms …)
+//   .exponential_backoff(ms) — wait doubles each attempt (ms, 2ms, 4ms, 8ms …)
+// .timeout(ms, label) sets a per-attempt timeout; label appears in error messages.
+
 def language as string("Def")
 
 def res as response(
@@ -5,7 +13,7 @@ def res as response(
     .path("https://httpbingo.org/anything")
     .body_from("tdef/body.tdef")
     .retries(3)
-    .linear_backoff(100)
+    .linear_backoff(100)    // 100 ms, 200 ms, 300 ms
     .timeout(2000, "httpbingo timeout")
     .with_var(language)
     .do()

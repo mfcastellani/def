@@ -1,6 +1,12 @@
+// if / else conditionals
+// Conditions must evaluate to boolean. The else branch is optional.
+// Blocks create a local scope: variables declared inside with def are
+// local to the block; assignments update the nearest enclosing binding.
+
 def status as integer(200)
 def message as string()
 
+// Assignment inside the if block updates the outer 'message' variable.
 if status == 200 (
   message = "ok"
 ) else (
@@ -10,6 +16,7 @@ if status == 200 (
 print("status:  {{status}}")
 print("message: {{message}}")
 
+// 'not' negates a boolean expression — else branch omitted when not needed.
 if not false (
   print("not condition")
 )

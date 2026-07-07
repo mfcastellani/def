@@ -172,6 +172,18 @@ impl Parser {
             Type::Tuple => Ok(Expression::Tuple(
                 self.parse_expression_list_until_right_paren()?,
             )),
+            Type::File => {
+                let mode = match self.advance() {
+                    Token::Identifier(m) => m.to_uppercase(),
+                    token => return Err(DefError::Parse(format!(
+                        "expected file mode (READ, WRITE, or APPEND) at line {}, found {token:?}",
+                        self.current_line
+                    ))),
+                };
+                self.consume(&Token::RightParen, "expected ')' after file mode")?;
+                let base = Expression::File { mode };
+                self.parse_postfix_expression(base)
+            }
             Type::Mock => {
                 self.skip_newlines();
                 let method = match self.advance() {
@@ -354,6 +366,7 @@ impl Parser {
             Token::TypeDateTime => Ok(Type::DateTime),
             Token::TypeRequest => Ok(Type::Request),
             Token::TypeMock => Ok(Type::Mock),
+            Token::TypeFile => Ok(Type::File),
             Token::Identifier(name) if name == "response" => Ok(Type::Response),
             token => Err(DefError::Parse(format!(
                 "expected type at line {}, found {token:?}",
@@ -552,6 +565,20 @@ impl Parser {
                 };
                 self.consume(&Token::RightParen, "expected ')' after request method")?;
                 Expression::Request { method }
+            }
+            Token::TypeFile => {
+                self.consume(&Token::LeftParen, "expected '(' after 'file'")?;
+                let mode = match self.advance() {
+                    Token::Identifier(m) => m.to_uppercase(),
+                    token => {
+                        return Err(DefError::Parse(format!(
+                            "file expression expects a mode (READ, WRITE, or APPEND) at line {}, found {token:?}",
+                            self.current_line
+                        )));
+                    }
+                };
+                self.consume(&Token::RightParen, "expected ')' after file mode")?;
+                Expression::File { mode }
             }
             Token::TypeMock => {
                 self.consume(&Token::LeftParen, "expected '(' after 'mock'")?;
@@ -775,6 +802,7 @@ impl Parser {
                 | Some(Token::TypeTuple)
                 | Some(Token::TypeRequest)
                 | Some(Token::TypeMock)
+                | Some(Token::TypeFile)
                 | Some(Token::Match)
         )
     }

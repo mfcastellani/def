@@ -1,3 +1,8 @@
+// math module — imported by examples/language/imported-math.def
+// Exposes arithmetic helpers and a shared variable.
+// Any top-level def in this file is accessible via the module reference
+// returned by imported("imports/math") in the importing file.
+
 def variable as string()
 
 def add as function(a as integer, b as integer) (

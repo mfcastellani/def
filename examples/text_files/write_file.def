@@ -1,0 +1,17 @@
+// Write a text file from scratch
+// file(WRITE) creates the file if it does not exist, or truncates it if it
+// does. Use \n in string literals to insert newlines (escape sequences are
+// supported in all string literals).
+// Run from the examples/text_files/ directory: def run write_file.def
+
+def f as file(WRITE).path("output.txt")
+f.open()
+
+f.write("Hello from Def!\n")
+f.write("Second line.\n")
+f.write("Third line.\n")
+
+// close() flushes the write buffer before releasing the file handle.
+f.close()
+
+print("File written successfully.")

@@ -1,6 +1,7 @@
 use std::{
     collections::{HashMap, HashSet},
-    fs,
+    fs::{self, File, OpenOptions},
+    io::{BufRead, BufReader, BufWriter, Read, Write},
     path::{Path, PathBuf},
 };
 
@@ -12,10 +13,11 @@ use crate::ast::{
 use crate::error::{DefError, DefResult};
 use crate::lexer::Lexer;
 use crate::parser::Parser;
-use crate::value::{MockValue, Value};
+use crate::value::{FileMode, FileValue, MockValue, Value};
 
 mod collections;
 mod datetime;
+mod files;
 mod functions;
 mod http;
 mod mock;
@@ -25,6 +27,7 @@ use collections::{
     call_array_method, call_array_push_on_global_variable, call_array_push_on_scoped_variable,
     call_tuple_method, get_array_index,
 };
+use files::FileState;
 use datetime::{call_datetime_method, is_datetime_setter};
 use functions::request_value_from_initializer;
 use http::{apply_request_method, call_response_method, new_request_value, RequestMethodResult};
@@ -65,6 +68,7 @@ pub struct Interpreter {
     source_file: String,
     pub(crate) dry_run: bool,
     params: HashMap<String, String>,
+    file_states: HashMap<String, FileState>,
 }
 
 impl Default for Interpreter {
@@ -78,6 +82,7 @@ impl Default for Interpreter {
             source_file: String::new(),
             dry_run: false,
             params: HashMap::new(),
+            file_states: HashMap::new(),
         }
     }
 }
@@ -500,6 +505,21 @@ impl Interpreter {
             }
             Expression::Tuple(items) => self.evaluate_tuple(items, scopes),
             Expression::Request { method } => Ok(new_request_value(method)),
+            Expression::File { mode } => {
+                let file_mode = match mode.as_str() {
+                    "READ" => FileMode::Read,
+                    "WRITE" => FileMode::Write,
+                    "APPEND" => FileMode::Append,
+                    _ => return Err(DefError::Runtime(format!(
+                        "invalid file mode '{mode}'; expected READ, WRITE, or APPEND"
+                    ))),
+                };
+                Ok(Value::File(FileValue {
+                    path: None,
+                    mode: file_mode,
+                    is_open: false,
+                }))
+            }
             Expression::Mock { method, url } => {
                 let url_val = self.evaluate_expression(url, scopes)?;
                 let Value::String(url) = url_val else {
@@ -771,6 +791,14 @@ impl Interpreter {
                     return Ok(value);
                 }
             }
+
+            let is_file_var = matches!(
+                get_scoped_variable(scopes, object_name).or_else(|| self.variables.get(object_name.as_str())),
+                Some(Value::File(_))
+            );
+            if is_file_var {
+                return self.call_file_method_on_variable(scopes, object_name, name, values);
+            }
         }
 
         let object = self.evaluate_expression(object, scopes)?;
@@ -787,8 +815,30 @@ impl Interpreter {
             Value::Integer(n) => call_integer_method(n, name, values),
             Value::Float(f) => call_float_method(f, name, values),
             Value::Mock(mock) => call_mock_method(mock, name, values, &self.base_dir),
+            Value::File(file_val) => {
+                if name == "path" {
+                    if values.len() != 1 {
+                        return Err(DefError::Runtime(format!(
+                            "file.path expects 1 argument, got {}",
+                            values.len()
+                        )));
+                    }
+                    let Value::String(path) = values.into_iter().next().unwrap() else {
+                        return Err(DefError::Runtime(
+                            "file.path expects a string argument".to_string(),
+                        ));
+                    };
+                    let mut updated = file_val;
+                    updated.path = Some(path);
+                    Ok(Value::File(updated))
+                } else {
+                    Err(DefError::Runtime(format!(
+                        "file method '{name}' must be called on a named file variable, not an inline expression"
+                    )))
+                }
+            }
             _ => Err(DefError::Runtime(format!(
-                "member function '{name}' is only available on request, response, array, tuple, datetime, string, integer, float or mock values"
+                "member function '{name}' is only available on request, response, array, tuple, datetime, string, integer, float, mock, or file values"
             ))),
         }
     }
@@ -839,6 +889,287 @@ impl Interpreter {
             }
             _ => Err(DefError::Runtime(format!(
                 "member function '{name}' is only available on request values"
+            ))),
+        }
+    }
+
+    fn get_file_value(&self, scopes: &ScopeStack, var_name: &str) -> DefResult<FileValue> {
+        for frame in scopes.iter().rev() {
+            if let Some(Value::File(fv)) = frame.vars.get(var_name) {
+                return Ok(fv.clone());
+            }
+        }
+        if let Some(Value::File(fv)) = self.variables.get(var_name) {
+            return Ok(fv.clone());
+        }
+        Err(DefError::Runtime(format!(
+            "undefined file variable '{var_name}'"
+        )))
+    }
+
+    fn set_file_value(
+        &mut self,
+        scopes: &mut ScopeStack,
+        var_name: &str,
+        file_val: FileValue,
+    ) -> DefResult<()> {
+        for frame in scopes.iter_mut().rev() {
+            if frame.vars.contains_key(var_name) {
+                frame.vars.insert(var_name.to_string(), Value::File(file_val));
+                return Ok(());
+            }
+        }
+        if self.variables.contains_key(var_name) {
+            self.variables
+                .insert(var_name.to_string(), Value::File(file_val));
+            return Ok(());
+        }
+        Err(DefError::Runtime(format!(
+            "undefined file variable '{var_name}'"
+        )))
+    }
+
+    fn call_file_method_on_variable(
+        &mut self,
+        scopes: &mut ScopeStack,
+        var_name: &str,
+        method: &str,
+        args: Vec<Value>,
+    ) -> DefResult<Value> {
+        match method {
+            "path" => {
+                if args.len() != 1 {
+                    return Err(DefError::Runtime(format!(
+                        "file.path expects 1 argument, got {}",
+                        args.len()
+                    )));
+                }
+                let Value::String(path) = args.into_iter().next().unwrap() else {
+                    return Err(DefError::Runtime(
+                        "file.path expects a string argument".to_string(),
+                    ));
+                };
+                let mut fv = self.get_file_value(scopes, var_name)?;
+                fv.path = Some(path);
+                self.set_file_value(scopes, var_name, fv)?;
+                Ok(Value::Nil)
+            }
+            "open" => {
+                if !args.is_empty() {
+                    return Err(DefError::Runtime(format!(
+                        "file.open expects 0 arguments, got {}",
+                        args.len()
+                    )));
+                }
+                let fv = self.get_file_value(scopes, var_name)?;
+                if fv.is_open {
+                    return Err(DefError::Runtime(format!(
+                        "file '{var_name}' is already open"
+                    )));
+                }
+                let path_str = fv.path.as_ref().ok_or_else(|| {
+                    DefError::Runtime(format!(
+                        "file '{var_name}' has no path set; call .path(\"...\") first"
+                    ))
+                })?;
+                let full_path = if Path::new(path_str.as_str()).is_absolute() {
+                    PathBuf::from(path_str)
+                } else {
+                    self.base_dir.join(path_str)
+                };
+                let state = match fv.mode {
+                    FileMode::Read => {
+                        let file = File::open(&full_path).map_err(|e| {
+                            DefError::Runtime(format!(
+                                "cannot open '{}' for reading: {e}",
+                                full_path.display()
+                            ))
+                        })?;
+                        FileState::Read(files::ReaderState {
+                            reader: BufReader::new(file),
+                            eof: false,
+                        })
+                    }
+                    FileMode::Write => {
+                        let file = File::create(&full_path).map_err(|e| {
+                            DefError::Runtime(format!(
+                                "cannot open '{}' for writing: {e}",
+                                full_path.display()
+                            ))
+                        })?;
+                        FileState::Write(BufWriter::new(file))
+                    }
+                    FileMode::Append => {
+                        let file = OpenOptions::new()
+                            .append(true)
+                            .create(true)
+                            .open(&full_path)
+                            .map_err(|e| {
+                                DefError::Runtime(format!(
+                                    "cannot open '{}' for appending: {e}",
+                                    full_path.display()
+                                ))
+                            })?;
+                        FileState::Append(BufWriter::new(file))
+                    }
+                };
+                self.file_states.insert(var_name.to_string(), state);
+                let mut updated = fv;
+                updated.is_open = true;
+                self.set_file_value(scopes, var_name, updated)?;
+                Ok(Value::Nil)
+            }
+            "eof" => {
+                if !args.is_empty() {
+                    return Err(DefError::Runtime(format!(
+                        "file.eof expects 0 arguments, got {}",
+                        args.len()
+                    )));
+                }
+                let state = self.file_states.get(var_name).ok_or_else(|| {
+                    DefError::Runtime(format!("file '{var_name}' is not open; call .open() first"))
+                })?;
+                match state {
+                    FileState::Read(rs) => Ok(Value::Boolean(rs.eof)),
+                    _ => Err(DefError::Runtime(
+                        "file.eof is only available for files opened in READ mode".to_string(),
+                    )),
+                }
+            }
+            "read_line" => {
+                if !args.is_empty() {
+                    return Err(DefError::Runtime(format!(
+                        "file.read_line expects 0 arguments, got {}",
+                        args.len()
+                    )));
+                }
+                let state = self.file_states.get_mut(var_name).ok_or_else(|| {
+                    DefError::Runtime(format!("file '{var_name}' is not open; call .open() first"))
+                })?;
+                match state {
+                    FileState::Read(rs) => {
+                        let mut line = String::new();
+                        let bytes = rs.reader.read_line(&mut line).map_err(|e| {
+                            DefError::Runtime(format!("read_line error: {e}"))
+                        })?;
+                        if bytes == 0 {
+                            rs.eof = true;
+                            Ok(Value::String(String::new()))
+                        } else {
+                            if line.ends_with('\n') {
+                                line.pop();
+                                if line.ends_with('\r') {
+                                    line.pop();
+                                }
+                            }
+                            Ok(Value::String(line))
+                        }
+                    }
+                    _ => Err(DefError::Runtime(
+                        "file.read_line is only available for files opened in READ mode"
+                            .to_string(),
+                    )),
+                }
+            }
+            "read_all" => {
+                if !args.is_empty() {
+                    return Err(DefError::Runtime(format!(
+                        "file.read_all expects 0 arguments, got {}",
+                        args.len()
+                    )));
+                }
+                let state = self.file_states.get_mut(var_name).ok_or_else(|| {
+                    DefError::Runtime(format!("file '{var_name}' is not open; call .open() first"))
+                })?;
+                match state {
+                    FileState::Read(rs) => {
+                        let mut content = String::new();
+                        rs.reader.read_to_string(&mut content).map_err(|e| {
+                            DefError::Runtime(format!("read_all error: {e}"))
+                        })?;
+                        rs.eof = true;
+                        Ok(Value::String(content))
+                    }
+                    _ => Err(DefError::Runtime(
+                        "file.read_all is only available for files opened in READ mode".to_string(),
+                    )),
+                }
+            }
+            "write" => {
+                if args.len() != 1 {
+                    return Err(DefError::Runtime(format!(
+                        "file.write expects 1 argument, got {}",
+                        args.len()
+                    )));
+                }
+                let Value::String(content) = args.into_iter().next().unwrap() else {
+                    return Err(DefError::Runtime(
+                        "file.write expects a string argument".to_string(),
+                    ));
+                };
+                let state = self.file_states.get_mut(var_name).ok_or_else(|| {
+                    DefError::Runtime(format!("file '{var_name}' is not open; call .open() first"))
+                })?;
+                match state {
+                    FileState::Write(w) | FileState::Append(w) => {
+                        w.write_all(content.as_bytes()).map_err(|e| {
+                            DefError::Runtime(format!("file.write error: {e}"))
+                        })?;
+                        Ok(Value::Nil)
+                    }
+                    _ => Err(DefError::Runtime(
+                        "file.write is only available for files opened in WRITE or APPEND mode"
+                            .to_string(),
+                    )),
+                }
+            }
+            "flush" => {
+                if !args.is_empty() {
+                    return Err(DefError::Runtime(format!(
+                        "file.flush expects 0 arguments, got {}",
+                        args.len()
+                    )));
+                }
+                let state = self.file_states.get_mut(var_name).ok_or_else(|| {
+                    DefError::Runtime(format!("file '{var_name}' is not open; call .open() first"))
+                })?;
+                match state {
+                    FileState::Write(w) | FileState::Append(w) => {
+                        w.flush().map_err(|e| {
+                            DefError::Runtime(format!("file.flush error: {e}"))
+                        })?;
+                        Ok(Value::Nil)
+                    }
+                    _ => Err(DefError::Runtime(
+                        "file.flush is only available for files opened in WRITE or APPEND mode"
+                            .to_string(),
+                    )),
+                }
+            }
+            "close" => {
+                if !args.is_empty() {
+                    return Err(DefError::Runtime(format!(
+                        "file.close expects 0 arguments, got {}",
+                        args.len()
+                    )));
+                }
+                if let Some(state) = self.file_states.remove(var_name) {
+                    match state {
+                        FileState::Write(mut w) | FileState::Append(mut w) => {
+                            w.flush().map_err(|e| {
+                                DefError::Runtime(format!("file.close flush error: {e}"))
+                            })?;
+                        }
+                        FileState::Read(_) => {}
+                    }
+                }
+                let mut fv = self.get_file_value(scopes, var_name)?;
+                fv.is_open = false;
+                self.set_file_value(scopes, var_name, fv)?;
+                Ok(Value::Nil)
+            }
+            _ => Err(DefError::Runtime(format!(
+                "undefined file method '{method}'"
             ))),
         }
     }

@@ -1,3 +1,15 @@
+// .snapshot() — save a response baseline
+// On the first run, .snapshot() saves the response body as a snapshot file
+// in the snapshots/ directory next to the .def file. On subsequent runs,
+// it compares the live response against the saved baseline and fails if the
+// structure diverges.
+//
+// Use .assert_snapshot() on the response object to explicitly trigger the
+// structural comparison check on a saved snapshot:
+//   res.assert_snapshot()
+//
+// To reset a snapshot, delete its file in snapshots/ and re-run.
+
 def language as string("Def")
 
 def res as response(
@@ -5,7 +17,7 @@ def res as response(
     .path("https://httpbingo.org/anything")
     .body_from("jdef/body.jdef")
     .with_var(language)
-    .snapshot()
+    .snapshot()   // saves/compares snapshot on every run
     .do()
 )
 

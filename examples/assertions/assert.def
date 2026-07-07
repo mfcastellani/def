@@ -1,16 +1,28 @@
+// assert() — runtime invariant checking
+// assert(expr) aborts execution with "assertion failed" if the expression
+// evaluates to false. Use it to verify expected conditions at any point in a
+// script — after a calculation, after an HTTP call, or between workflow steps.
+
 def ok as boolean(true)
 
 def sum as function(a as integer, b as integer) (
   a + b
 )
 
+// equality and function return values
 assert(ok == true)
 assert(sum(1, 2) == 3)
+
+// numeric comparisons
 assert(12 > 10)
-assert(true != false)
 assert(10 <= 12)
 assert(12 >= 10)
 assert(10 < 12)
+
+// inequality
+assert(true != false)
+
+// boolean operators: and, or
 assert(true and true)
 assert((false and false) == false)
 assert((true and false) == false)

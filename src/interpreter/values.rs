@@ -4,7 +4,7 @@ use crate::ast::{AssignmentOperator, BinaryOperator, MatchPattern, Type, UnaryOp
 use crate::error::{DefError, DefResult};
 use chrono::Local;
 
-use crate::value::{ResponseValue, Value};
+use crate::value::{FileValue, ResponseValue, Value};
 
 pub(super) fn call_integer_method(n: i64, name: &str, args: Vec<Value>) -> DefResult<Value> {
     match name {
@@ -133,6 +133,11 @@ pub(super) fn printable_value(value: &Value) -> String {
         Value::RequestHandle(request) => request.clone(),
         Value::Response(response) => response.body.clone(),
         Value::Mock(mock) => format!("mock({} {})", mock.method, mock.url),
+        Value::File(fv) => format!(
+            "file({:?}, {})",
+            fv.mode,
+            fv.path.as_deref().unwrap_or("<no path>")
+        ),
         Value::Uninitialized(type_annotation) => format!("{type_annotation:?}"),
         Value::Nil => "nil".to_string(),
     }
@@ -146,6 +151,7 @@ pub(super) fn coerce_value_to_type(expected: &Type, value: Value) -> DefResult<V
         (Type::Tuple, value @ Value::Tuple { .. }) => Ok(value),
         (Type::DateTime, value @ Value::DateTime(_)) => Ok(value),
         (Type::Mock, value @ Value::Mock(_)) => Ok(value),
+        (Type::File, value @ Value::File(_)) => Ok(value),
         (expected, value) if value.value_type().as_ref() == Some(expected) => Ok(value),
         (expected, value) => Err(DefError::Runtime(format!(
             "expected value of type {expected:?}, got {value:?}"
@@ -374,6 +380,11 @@ pub(super) fn default_value_for_type(type_annotation: &Type) -> Value {
         Type::DateTime => Value::DateTime(Local::now()),
         Type::Request => Value::Uninitialized(Type::Request),
         Type::Mock => Value::Uninitialized(Type::Mock),
+        Type::File => Value::File(FileValue {
+            path: None,
+            mode: crate::value::FileMode::Read,
+            is_open: false,
+        }),
         Type::Response => Value::Response(ResponseValue {
             status: 0,
             body: String::new(),
